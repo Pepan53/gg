@@ -33,9 +33,9 @@
         "lng": 14.474214
       },
       "view": {
-        "yaw": 4.148,
-        "pitch": 0.009,
-        "fov": 0.157
+        "yaw": 0,
+        "pitch": 0,
+        "fov": 1.2
       },
       "hints": [
         "Uprostřed velkého dlážděného náměstí stojí kamenná kašna se sochou na vrcholu, obehnaná řetězy.",
@@ -79,8 +79,8 @@
         "lng": 14.654258
       },
       "view": {
-        "yaw": 1.145,
-        "pitch": 0.213,
+        "yaw": 3.803,
+        "pitch": 0,
         "fov": 1.2
       },
       "hints": [
@@ -103,7 +103,7 @@
         "lng": 14.411486649236
       },
       "view": {
-        "center": [0.303, 0.605],
+        "center": [0.86, 0.5],
         "zoom": 0
       },
       "hints": [
@@ -125,8 +125,8 @@
         "lng": 14.717351
       },
       "view": {
-        "yaw": 2.305,
-        "pitch": -0.008,
+        "yaw": 0,
+        "pitch": 0,
         "fov": 1.2
       },
       "hints": [

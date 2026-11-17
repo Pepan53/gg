@@ -158,7 +158,8 @@ místo mimo oblast**.
 
 ## Režim Učení a správa výukových míst
 
-**Hra:** typ hry **Učení** (oblast Svět). Hraje se jako Klasika, ale místo náhodných
+**Hra:** typ hry **Učení** v oblasti Svět, Česko + Slovensko nebo Česko. Hrají se schválená
+místa ležící v oblasti, takže v Česku platí přísnější škála a mapa začíná na Česku. Hraje se jako Klasika, ale místo náhodných
 panoramat jen ručně vybraná a **schválená** místa, každé nejvýš jednou za hru. Po vyhodnocení
 kola se ukáže název místa a **2 až 3 vodítka**, podle kterých šlo místo poznat. Hra má
 5 kol, nebo méně, když je schválených míst méně.

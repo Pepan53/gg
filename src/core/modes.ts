@@ -112,6 +112,6 @@ export const GAME_TYPES: Record<GameType, GameTypeDef> = {
     name: 'Učení',
     rules:
       'Ručně vybraná místa. Hraje se jako Klasika a po každém kole uvidíš 2 až 3 vodítka, podle kterých šlo místo poznat.',
-    regions: ['world'],
+    regions: ['world', 'czsk', 'cz'],
   },
 };

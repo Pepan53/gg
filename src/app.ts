@@ -36,6 +36,7 @@ import {
   type RegionId,
 } from './core/modes';
 import { placeToTarget, playablePlaces, type LearningPlace } from './core/places';
+import { pointInGeometry } from './core/polygon';
 import { newId, randomItem } from './core/random';
 import { checkPlace } from './learning/check';
 import { publishedPlaces } from './learning/store';
@@ -125,6 +126,14 @@ export class App {
   /** Výuková místa, která jsou v této relaci nedostupná (přeskočí se). */
   private unavailablePlaces = new Set<string>();
   private readonly places = playablePlaces(publishedPlaces());
+
+  /** Schválená místa v oblasti (Učení v Česku má přísnější škálu i výřez mapy). */
+  private placesIn(region: RegionId): LearningPlace[] {
+    const area = REGIONS[region].area;
+    return area
+      ? this.places.filter((p) => pointInGeometry(p.position, area.geometry))
+      : this.places;
+  }
   private readonly providers: Record<ProviderId, PanoramaProvider>;
 
   constructor(
@@ -441,7 +450,7 @@ export class App {
       for (const label of form.querySelectorAll<HTMLLabelElement>('[data-type]')) {
         const id = label.dataset['type'] as GameType;
         const inRegion = GAME_TYPES[id].regions.includes(prefs.region);
-        const hasPlaces = id !== 'learning' || this.places.length > 0;
+        const hasPlaces = id !== 'learning' || this.placesIn(prefs.region).length > 0;
         const allowed = inRegion && hasPlaces;
         const input = label.querySelector('input') as HTMLInputElement;
         input.disabled = !allowed;
@@ -453,7 +462,7 @@ export class App {
             ? ''
             : !inRegion
               ? 'Jen v oblasti Svět.'
-              : 'Zatím žádné schválené místo. Schval místa ve Správě výukových míst.';
+              : 'V této oblasti zatím není žádné schválené místo.';
         }
         if (!allowed && input.checked) {
           input.checked = false;
@@ -486,7 +495,9 @@ export class App {
         timeLimitSec: prefs.timeLimitSec,
         players: prefs.multi ? prefs.players.map((p) => p.trim()) : ['Ty'],
         rounds:
-          prefs.type === 'learning' ? Math.min(ROUNDS_PER_GAME, this.places.length) : undefined,
+          prefs.type === 'learning'
+            ? Math.min(ROUNDS_PER_GAME, this.placesIn(prefs.region).length)
+            : undefined,
       };
       const err = validateSettings(settings);
       errorEl.hidden = !err;
@@ -574,7 +585,7 @@ export class App {
   private async nextLearningTarget(signal: AbortSignal): Promise<Target> {
     const used = new Set(this.state?.rounds.map((r) => r.target.placeId));
     for (;;) {
-      const candidates = this.places.filter(
+      const candidates = this.placesIn(this.state?.settings.region ?? 'world').filter(
         (p) => !used.has(p.id) && !this.unavailablePlaces.has(p.id),
       );
       const place = randomItem(candidates);
