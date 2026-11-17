@@ -1,0 +1,669 @@
+:root {
+  --bg: #f4f6f5;
+  --surface: #ffffff;
+  --ink: #0f172a;
+  --muted: #526071;
+  --line: #d9e0e4;
+  --accent: #0f766e;
+  --accent-ink: #ffffff;
+  --accent-soft: #e3f3f1;
+  --warn: #b45309;
+  --danger: #dc2626;
+  --guess: #2563eb;
+  --radius: 14px;
+  --tap: 48px;
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  color-scheme: light;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+  -webkit-text-size-adjust: 100%;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  min-height: 100dvh;
+}
+
+h1,
+h2 {
+  line-height: 1.15;
+  margin: 0 0 0.5rem;
+}
+h1:focus,
+h2:focus {
+  outline: none;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+:focus-visible {
+  outline: 3px solid #f59e0b;
+  outline-offset: 2px;
+}
+
+/* ---------- tlačítka ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: var(--tap);
+  padding: 0 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.btn:hover {
+  border-color: var(--accent);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.btn--primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+.btn--big {
+  min-height: 56px;
+  font-size: 1.1rem;
+  width: 100%;
+}
+.btn--ghost {
+  background: transparent;
+  border-color: transparent;
+}
+.btn--hud {
+  min-height: 40px;
+  padding: 0 0.85rem;
+  background: rgb(15 23 42 / 0.72);
+  border-color: transparent;
+  color: #fff;
+  backdrop-filter: blur(6px);
+  font-size: 0.9rem;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  justify-content: center;
+}
+
+/* ---------- úvod ---------- */
+
+.screen {
+  min-height: 100dvh;
+}
+
+.intro {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: calc(1.5rem + var(--safe-t)) 1.25rem calc(1.5rem + var(--safe-b));
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+.logo {
+  display: inline-grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin: 0 0 0.75rem;
+  border-radius: 16px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 800;
+  font-size: 1.4rem;
+  letter-spacing: 0.02em;
+}
+.intro h1 {
+  font-size: clamp(1.8rem, 6vw, 2.4rem);
+}
+.lead {
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.intro__form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+legend {
+  font-weight: 700;
+  margin-bottom: 0.6rem;
+  padding: 0;
+}
+
+.choice {
+  display: flex;
+  gap: 0.8rem;
+  align-items: flex-start;
+  padding: 0.9rem 1rem;
+  min-height: var(--tap);
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+}
+.choice:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.choice:has(input:focus-visible) {
+  outline: 3px solid #f59e0b;
+  outline-offset: 2px;
+}
+.choice input {
+  margin-top: 0.2rem;
+  width: 1.2rem;
+  height: 1.2rem;
+  accent-color: var(--accent);
+}
+.choice__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.choice__body span {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+.choice--disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.pill {
+  position: relative;
+}
+.pill input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+}
+.pill span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 1rem;
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  cursor: pointer;
+  font-weight: 600;
+}
+.pill input:checked + span {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.pill input:focus-visible + span {
+  outline: 3px solid #f59e0b;
+  outline-offset: 2px;
+}
+
+.card {
+  padding: 1rem;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.card p {
+  margin: 0.25rem 0 0.75rem;
+}
+.card--warn {
+  border-color: var(--warn);
+  background: #fff7ed;
+}
+.intro__foot {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+/* ---------- načítání ---------- */
+
+.center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1.5rem;
+  text-align: center;
+}
+.status {
+  color: var(--muted);
+  max-width: 32ch;
+}
+.spinner {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 4px solid rgb(15 118 110 / 0.2);
+  border-top-color: var(--accent);
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 3s;
+  }
+  .mappanel {
+    transition: none !important;
+  }
+}
+
+.offline {
+  position: fixed;
+  left: 50%;
+  top: calc(0.5rem + var(--safe-t));
+  transform: translateX(-50%);
+  z-index: 50;
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  background: var(--warn);
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+/* ---------- herní obrazovka ---------- */
+
+.game {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  grid-template: 1fr / 1fr;
+  background: #000;
+  overflow: hidden;
+}
+.game__pano {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+.pano {
+  position: absolute;
+  inset: 0;
+}
+.pano__overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1.5rem;
+  background: #0f172a;
+  color: #fff;
+  text-align: center;
+}
+.pano__overlay[hidden] {
+  display: none;
+}
+
+.hud {
+  position: absolute;
+  z-index: 10;
+  top: calc(0.6rem + var(--safe-t));
+  left: calc(0.6rem + var(--safe-l));
+  right: calc(0.6rem + var(--safe-r));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem;
+  pointer-events: none;
+}
+.hud > * {
+  pointer-events: auto;
+}
+.hud__info {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+.hud__info > span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  min-height: 40px;
+  align-items: center;
+  padding: 0 0.8rem;
+  border-radius: 999px;
+  background: rgb(15 23 42 / 0.72);
+  backdrop-filter: blur(6px);
+  color: #fff;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.hud__info small {
+  font-weight: 500;
+  opacity: 0.75;
+}
+.hud__timer--low {
+  background: var(--danger) !important;
+}
+.hud__actions {
+  display: flex;
+  gap: 0.35rem;
+}
+
+/* Tlačítko mapy necháváme nad spodním okrajem, kde mají panoramata atribuci. */
+.fab {
+  position: absolute;
+  z-index: 10;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(3rem + var(--safe-b));
+  min-height: 56px;
+  padding: 0 1.6rem;
+  font-size: 1.05rem;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.35);
+}
+
+.mappanel {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  min-width: 0;
+  min-height: 0;
+}
+.mappanel__bar {
+  display: flex;
+  justify-content: space-between;
+  padding: calc(0.25rem + var(--safe-t) * 0) 0.5rem 0;
+}
+.mappanel__map {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.guessmap,
+.mappanel__map .guessmap.maplibregl-map {
+  position: absolute;
+  inset: 0;
+}
+.guessmap .maplibregl-canvas {
+  cursor: crosshair;
+}
+.mappanel__foot {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem calc(0.6rem + var(--safe-b));
+  border-top: 1px solid var(--line);
+}
+.maphint {
+  flex: 1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.btn--confirm {
+  min-height: 52px;
+  padding: 0 1.4rem;
+}
+.mapmsg {
+  position: absolute;
+  inset: auto 0.75rem 0.75rem;
+  z-index: 3;
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  background: #fff7ed;
+  border: 1px solid var(--warn);
+}
+
+/* Úzký displej (telefon, zavřený Fold): mapa jako vysouvací panel. */
+@media (max-width: 699.98px), (max-height: 499.98px) {
+  .mappanel {
+    position: fixed;
+    z-index: 20;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: min(62dvh, 560px);
+    border-radius: 18px 18px 0 0;
+    box-shadow: 0 -10px 30px rgb(0 0 0 / 0.3);
+    transition:
+      transform 0.25s ease,
+      height 0.25s ease;
+  }
+  .mappanel[data-state='closed'] {
+    transform: translateY(105%);
+    visibility: hidden;
+  }
+  .mappanel[data-state='full'] {
+    height: 100dvh;
+    border-radius: 0;
+    padding-top: var(--safe-t);
+  }
+}
+
+/* Širší displej na šířku (PC, tablet, rozložený Fold na šířku): mapa vedle. */
+@media (min-width: 700px) and (min-height: 500px) and (orientation: landscape) {
+  .game {
+    grid-template: 1fr / 1fr clamp(320px, 36vw, 560px);
+  }
+  .mappanel {
+    border-left: 1px solid var(--line);
+  }
+}
+
+/* Širší displej na výšku (rozložený Fold, tablet): mapa pod panoramatem. */
+@media (min-width: 700px) and (min-height: 500px) and (orientation: portrait) {
+  .game {
+    grid-template: 58fr 42fr / 1fr;
+  }
+  .mappanel {
+    border-top: 1px solid var(--line);
+  }
+}
+
+@media (min-width: 700px) and (min-height: 500px) {
+  .fab,
+  .mappanel__bar {
+    display: none;
+  }
+}
+
+/* ---------- výsledek ---------- */
+
+.result {
+  display: grid;
+  grid-template: minmax(260px, 48dvh) auto / 1fr;
+}
+.result__map {
+  position: relative;
+  min-height: 0;
+}
+.resultmap,
+.result__map .resultmap.maplibregl-map {
+  position: absolute;
+  inset: 0;
+}
+.result__panel {
+  padding: 1.25rem 1.25rem calc(1.25rem + var(--safe-b));
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  background: var(--surface);
+}
+.result__panel h2 {
+  font-size: 1.4rem;
+}
+.stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin: 0;
+}
+.stats div {
+  padding: 0.8rem 1rem;
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+.stats dt {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.stats dd {
+  margin: 0.2rem 0 0;
+  font-size: 1.6rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.stats--none {
+  display: block;
+  padding: 0.9rem 1rem;
+  border-radius: var(--radius);
+  background: #fff7ed;
+  border: 1px solid var(--warn);
+}
+.note {
+  margin: 0;
+  color: var(--warn);
+  font-weight: 600;
+}
+.place,
+.total,
+.legend {
+  margin: 0;
+}
+.place small {
+  color: var(--muted);
+}
+.total {
+  font-weight: 700;
+}
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.dot--target {
+  background: var(--danger);
+}
+.dot--guess {
+  background: var(--guess);
+  margin-left: 0.6rem;
+}
+
+.bigscore {
+  margin: 0;
+  font-size: 1.15rem;
+  color: var(--muted);
+}
+.bigscore strong {
+  font-size: 2.6rem;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.rounds {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+.rounds th,
+.rounds td {
+  text-align: left;
+  padding: 0.55rem 0.4rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.rounds thead th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+.rounds .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.final .actions {
+  justify-content: stretch;
+}
+.final .actions .btn {
+  flex: 1;
+}
+
+@media (min-width: 700px) and (min-height: 500px) and (orientation: landscape) {
+  .result {
+    position: fixed;
+    inset: 0;
+    grid-template: 1fr / 1fr clamp(340px, 34vw, 480px);
+  }
+  .result__panel {
+    overflow-y: auto;
+    border-left: 1px solid var(--line);
+  }
+}

@@ -1,0 +1,32 @@
+import type { Target } from '../core/game';
+import type { ModeDef } from '../core/modes';
+
+export class ProviderError extends Error {
+  constructor(
+    message: string,
+    readonly kind: 'config' | 'network' | 'not-found' | 'unavailable',
+  ) {
+    super(message);
+    this.name = 'ProviderError';
+  }
+}
+
+export interface PanoramaViewer {
+  /** Vrátí hráče na počáteční panorama a výhled. */
+  reset(): void;
+  /** Přepočítá velikost po změně rozložení (složení Foldu, otočení). */
+  resize(): void;
+  destroy(): void;
+}
+
+export interface PanoramaProvider {
+  readonly id: Target['provider'];
+  /** Název a odkaz pro atribuci v UI. */
+  readonly attribution: { label: string; url: string };
+  /** Je nastavený klíč? Bez něj se knihovna poskytovatele vůbec nenačítá. */
+  isConfigured(): boolean;
+  /** Najde náhodné panorama v oblasti módu. */
+  findRandom(mode: ModeDef, signal: AbortSignal): Promise<Target>;
+  /** Zobrazí panorama v kontejneru. Při chybě vyhodí ProviderError. */
+  createViewer(container: HTMLElement, target: Target): Promise<PanoramaViewer>;
+}
