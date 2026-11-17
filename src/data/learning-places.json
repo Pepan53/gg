@@ -19,8 +19,10 @@
         "Kostel má červenou střechu a bílé ozdobné štíty, před ním je dlážděné náměstí.",
         "Domy kolem náměstí mají podloubí s klenutými oblouky."
       ],
-      "status": "draft",
-      "note": "Panorama Mapy.com 7 m od zadaného bodu. Výhled z podloubí na kostel."
+      "status": "approved",
+      "note": "Panorama Mapy.com 7 m od zadaného bodu. Výhled z podloubí na kostel.",
+      "reviewedBy": "Pepan",
+      "reviewedAt": "2026-11-17"
     },
     {
       "id": "ceske-budejovice-namesti",
@@ -31,17 +33,19 @@
         "lng": 14.474214
       },
       "view": {
-        "yaw": 0,
-        "pitch": 0,
-        "fov": 1.2
+        "yaw": 4.148,
+        "pitch": 0.009,
+        "fov": 0.157
       },
       "hints": [
         "Uprostřed velkého dlážděného náměstí stojí kamenná kašna se sochou na vrcholu, obehnaná řetězy.",
         "Vpravo za kašnou se zvedá vysoká hranolová věž s ochozem.",
         "Náměstí lemuje dlouhá řada měšťanských domů a stojí na něm stany a stánky trhu."
       ],
-      "status": "draft",
-      "note": "Panorama Mapy.com je noční snímek z prosince 2015 (vánoční trhy)."
+      "status": "approved",
+      "note": "Panorama Mapy.com je noční snímek z prosince 2015 (vánoční trhy).",
+      "reviewedBy": "Pepan",
+      "reviewedAt": "2026-11-17"
     },
     {
       "id": "trebon-hraz-svet",
@@ -52,8 +56,8 @@
         "lng": 14.76949
       },
       "view": {
-        "yaw": 2.908,
-        "pitch": 0,
+        "yaw": 3.048,
+        "pitch": 0.23,
         "fov": 1.2
       },
       "hints": [
@@ -61,8 +65,10 @@
         "Hráz lemují staré mohutné stromy s rozložitými korunami.",
         "Na protějším břehu je souvislý les a krajina kolem je rovinatá, bez kopců."
       ],
-      "status": "draft",
-      "note": "Při kontrole ověřit, že jde opravdu o hráz Světa (bod u Novohradské ulice)."
+      "status": "approved",
+      "note": "Při kontrole ověřit, že jde opravdu o hráz Světa (bod u Novohradské ulice).",
+      "reviewedBy": "Pepan",
+      "reviewedAt": "2026-11-17"
     },
     {
       "id": "silnice-zelec-ustrasice",
@@ -73,8 +79,8 @@
         "lng": 14.654258
       },
       "view": {
-        "yaw": 3.803,
-        "pitch": 0,
+        "yaw": 1.145,
+        "pitch": 0.213,
         "fov": 1.2
       },
       "hints": [
@@ -82,8 +88,10 @@
         "Vpředu jsou rodinné domy s červenými i šedými střechami a stromy.",
         "Na obzoru jsou jen nízké zalesněné kopce, krajina je mírně zvlněná."
       ],
-      "status": "draft",
-      "note": "Bod je na okraji Želče u fotbalového hřiště. Při kontrole ověřit směr výhledu (k Želči, nebo k Ústrašicím)."
+      "status": "approved",
+      "note": "Bod je na okraji Želče u fotbalového hřiště. Při kontrole ověřit směr výhledu (k Želči, nebo k Ústrašicím).",
+      "reviewedBy": "Pepan",
+      "reviewedAt": "2026-11-17"
     },
     {
       "id": "praha-karluv-most",
@@ -95,7 +103,7 @@
         "lng": 14.411486649236
       },
       "view": {
-        "center": [0.86, 0.5],
+        "center": [0.303, 0.605],
         "zoom": 0
       },
       "hints": [
@@ -103,8 +111,10 @@
         "Na kamenném zábradlí mostu stojí tmavé kamenné sousoší postav.",
         "Za zábradlím jsou vidět červené střechy starých domů a zeleň na svahu."
       ],
-      "status": "draft",
-      "note": "Mapillary, autor jeffreymartin, 2023."
+      "status": "approved",
+      "note": "Mapillary, autor jeffreymartin, 2023.",
+      "reviewedBy": "Pepan",
+      "reviewedAt": "2026-11-17"
     },
     {
       "id": "sobeslav-zimni-stadion",
@@ -115,8 +125,8 @@
         "lng": 14.717351
       },
       "view": {
-        "yaw": 0,
-        "pitch": 0,
+        "yaw": 2.305,
+        "pitch": -0.008,
         "fov": 1.2
       },
       "hints": [
@@ -124,8 +134,10 @@
         "Za ní je vysoká šedá budova bez oken a modrá přístavba s velkým kulatým znakem.",
         "U silnice je autobusová zastávka s přístřeškem a před halou parkují auta."
       ],
-      "status": "draft",
-      "note": "Poloha stadionu podle Mapy.com: Nová 401/1, Soběslav."
+      "status": "approved",
+      "note": "Poloha stadionu podle Mapy.com: Nová 401/1, Soběslav.",
+      "reviewedBy": "Pepan",
+      "reviewedAt": "2026-11-17"
     }
   ]
 }
