@@ -550,7 +550,7 @@ function resultCard(f: NearbyImage, onAdd: () => void): HTMLElement {
       h(
         'small',
         {},
-        `${f.id}${f.capturedAt ? ` · ${new Date(f.capturedAt).getFullYear()}` : ''}${f.creator ? ` · ${f.creator}` : ''}`,
+        `${f.distanceM} m · ${f.id}${f.capturedAt ? ` · ${new Date(f.capturedAt).getFullYear()}` : ''}${f.creator ? ` · ${f.creator}` : ''}`,
       ),
       h('button', { class: 'btn', type: 'button', onclick: onAdd }, 'Přidat'),
     ),
