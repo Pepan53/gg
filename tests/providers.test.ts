@@ -1,7 +1,7 @@
 import GeoJSONVT from 'geojson-vt';
 import { fromGeojsonVt } from 'vt-pbf';
 import { describe, expect, it, vi } from 'vitest';
-import { MODES } from '../src/core/modes';
+import { REGIONS } from '../src/core/modes';
 import { pointInGeometry } from '../src/core/polygon';
 import {
   MapillaryProvider,
@@ -111,7 +111,7 @@ describe('Mapillary: výběr panoramat', () => {
     const fetchFn = vi.fn();
     const p = new MapillaryProvider('', seqRng(), fetchFn as unknown as typeof fetch);
     expect(p.isConfigured()).toBe(false);
-    await expect(p.findRandom(MODES.world, new AbortController().signal)).rejects.toMatchObject({
+    await expect(p.findRandom(REGIONS.world, new AbortController().signal)).rejects.toMatchObject({
       kind: 'config',
     });
     expect(fetchFn).not.toHaveBeenCalled();
@@ -143,7 +143,7 @@ describe('Mapillary: výběr panoramat', () => {
       });
     });
     const p = new MapillaryProvider('tok', seqRng(7), fetchFn as unknown as typeof fetch);
-    const t = await p.findRandom(MODES.world, new AbortController().signal);
+    const t = await p.findRandom(REGIONS.world, new AbortController().signal);
     expect(t).toMatchObject({
       provider: 'mapillary',
       panoId: 'pano1',
@@ -159,7 +159,7 @@ describe('Mapillary: výběr panoramat', () => {
   it('po opakovaném neúspěchu vrátí srozumitelnou chybu', async () => {
     const fetchFn = vi.fn(async () => new Response(null, { status: 204 }));
     const p = new MapillaryProvider('tok', seqRng(3), fetchFn as unknown as typeof fetch);
-    await expect(p.findRandom(MODES.world, new AbortController().signal)).rejects.toBeInstanceOf(
+    await expect(p.findRandom(REGIONS.world, new AbortController().signal)).rejects.toBeInstanceOf(
       ProviderError,
     );
   });
@@ -167,8 +167,50 @@ describe('Mapillary: výběr panoramat', () => {
   it('odmítnutý klíč hlásí jako chybu konfigurace', async () => {
     const fetchFn = vi.fn(async () => new Response('{}', { status: 401 }));
     const p = new MapillaryProvider('spatny', seqRng(), fetchFn as unknown as typeof fetch);
-    await expect(p.findRandom(MODES.world, new AbortController().signal)).rejects.toMatchObject({
+    await expect(p.findRandom(REGIONS.world, new AbortController().signal)).rejects.toMatchObject({
       kind: 'config',
+    });
+  });
+});
+
+describe('Mapillary: oblast Česko + Slovensko', () => {
+  const tileHandler = (url: string) => {
+    const m = /\/(\d+)\/(\d+)\/(\d+)\?/.exec(url);
+    const [z, x, y] = [Number(m?.[1]), Number(m?.[2]), Number(m?.[3])];
+    const n = 2 ** z;
+    const lng = ((x + 0.5) / n) * 360 - 180;
+    const lat = (Math.atan(Math.sinh(Math.PI * (1 - (2 * (y + 0.5)) / n))) * 180) / Math.PI;
+    return new Response(coverageTile(z, x, y, [lng, lat], [lng + 0.2, lat]));
+  };
+
+  it('vybere jen panorama, které skutečně leží v oblasti', async () => {
+    const fetchFn = vi.fn(async (url: string) => {
+      if (url.startsWith('https://tiles.mapillary.com')) return tileHandler(url);
+      return Response.json({
+        data: [
+          { id: 'wien', is_pano: true, geometry: { coordinates: [16.37, 48.21] } },
+          { id: 'bratislava', is_pano: true, geometry: { coordinates: [17.11, 48.15] } },
+        ],
+      });
+    });
+    const p = new MapillaryProvider('tok', seqRng(11), fetchFn as unknown as typeof fetch);
+    for (let i = 0; i < 5; i++) {
+      const t = await p.findRandom(REGIONS.czsk, new AbortController().signal);
+      expect(t.panoId).toBe('bratislava');
+    }
+  });
+
+  it('nikdy nevrátí místo mimo oblast, ani když jiné nenajde', async () => {
+    const fetchFn = vi.fn(async (url: string) => {
+      if (url.startsWith('https://tiles.mapillary.com')) return tileHandler(url);
+      return Response.json({
+        data: [{ id: 'wien', is_pano: true, geometry: { coordinates: [16.37, 48.21] } }],
+      });
+    });
+    const p = new MapillaryProvider('tok', seqRng(5), fetchFn as unknown as typeof fetch);
+    await expect(p.findRandom(REGIONS.czsk, new AbortController().signal)).rejects.toMatchObject({
+      kind: 'not-found',
+      message: expect.stringContaining('Česko + Slovensko'),
     });
   });
 });
@@ -197,7 +239,7 @@ describe('Mapy.com: jen Česko', () => {
     const panoramaExists = vi.fn(async () => answers.shift() ?? { exists: false });
     const load = async () => ({ panoramaExists, panoramaFromPosition: vi.fn() });
     const p = new MapyProvider('klic', seqRng(), load as never);
-    const t = await p.findRandom(MODES.cz, new AbortController().signal);
+    const t = await p.findRandom(REGIONS.cz, new AbortController().signal);
     expect(t.position).toEqual({ lng: 16.6, lat: 49.19 });
     expect(panoramaExists).toHaveBeenCalledTimes(3);
   });
@@ -209,7 +251,7 @@ describe('Mapy.com: jen Česko', () => {
     }));
     const load = async () => ({ panoramaExists, panoramaFromPosition: vi.fn() });
     const p = new MapyProvider('klic', seqRng(), load as never);
-    await expect(p.findRandom(MODES.cz, new AbortController().signal)).rejects.toMatchObject({
+    await expect(p.findRandom(REGIONS.cz, new AbortController().signal)).rejects.toMatchObject({
       kind: 'not-found',
     });
   });
@@ -217,7 +259,7 @@ describe('Mapy.com: jen Česko', () => {
   it('bez klíče nenačítá knihovnu Mapy.com', async () => {
     const load = vi.fn();
     const p = new MapyProvider(undefined, seqRng(), load as never);
-    await expect(p.findRandom(MODES.cz, new AbortController().signal)).rejects.toMatchObject({
+    await expect(p.findRandom(REGIONS.cz, new AbortController().signal)).rejects.toMatchObject({
       kind: 'config',
     });
     expect(load).not.toHaveBeenCalled();
@@ -235,6 +277,19 @@ describe('název místa', () => {
         },
       ]),
     ).toBe('Praha 1 - Staré Město, Česko');
+  });
+
+  it('u obce neopakuje název dvakrát', () => {
+    expect(
+      placeNameFromItems([
+        { name: 'Veselý Žďár', location: 'Veselý Žďár, Česko', type: 'regional.municipality' },
+      ]),
+    ).toBe('Veselý Žďár, Česko');
+    expect(
+      placeNameFromItems([
+        { name: 'Milesimov', location: 'Všeradov, Česko', type: 'regional.municipality_part' },
+      ]),
+    ).toBe('Milesimov, Všeradov, Česko');
   });
 
   it('bez klíče nebo při chybě vrací null', async () => {

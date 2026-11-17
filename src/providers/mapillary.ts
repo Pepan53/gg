@@ -2,7 +2,8 @@ import { VectorTile } from '@mapbox/vector-tile';
 import { PbfReader } from 'pbf';
 import type { Target } from '../core/game';
 import { isValidLatLng, type LatLng } from '../core/geo';
-import type { ModeDef } from '../core/modes';
+import type { RegionArea, RegionDef } from '../core/modes';
+import { pointInGeometry } from '../core/polygon';
 import { defaultRng, randomBetween, randomItem, type Rng } from '../core/random';
 import { MAPILLARY_SEEDS } from '../data/mapillary-seeds';
 import { ProviderError, type PanoramaProvider, type PanoramaViewer } from './types';
@@ -60,20 +61,35 @@ interface ImageHit {
   computed_geometry?: { coordinates: [number, number] };
 }
 
-/** Vybere z výsledků vyhledávání jen skutečná 360° panoramata. */
-export function pickPano(hits: ImageHit[], rng: Rng = defaultRng): Target | null {
-  const panos = hits.filter(
-    (h) =>
+const hitPosition = (h: ImageHit): LatLng | null => {
+  const c = h.computed_geometry?.coordinates ?? h.geometry?.coordinates;
+  if (!c) return null;
+  const p = { lng: c[0], lat: c[1] };
+  return isValidLatLng(p) ? p : null;
+};
+
+/**
+ * Vybere z výsledků vyhledávání jen skutečná 360° panoramata; s oblastí jen ta,
+ * jejichž skutečná (zpřesněná) poloha leží uvnitř území.
+ */
+export function pickPano(
+  hits: ImageHit[],
+  rng: Rng = defaultRng,
+  area?: RegionArea,
+): Target | null {
+  const panos = hits.filter((h) => {
+    const okType =
       h.is_pano === true &&
       (h.camera_type === undefined ||
         h.camera_type === 'spherical' ||
-        h.camera_type === 'equirectangular'),
-  );
+        h.camera_type === 'equirectangular');
+    if (!okType) return false;
+    const p = hitPosition(h);
+    return !!p && (!area || pointInGeometry(p, area.geometry));
+  });
   const hit = randomItem(panos, rng);
-  const coords = hit?.computed_geometry?.coordinates ?? hit?.geometry?.coordinates;
-  if (!hit || !coords) return null;
-  const position = { lng: coords[0], lat: coords[1] };
-  if (!isValidLatLng(position)) return null;
+  const position = hit && hitPosition(hit);
+  if (!hit || !position) return null;
   return {
     provider: 'mapillary',
     panoId: hit.id,
@@ -119,22 +135,42 @@ export class MapillaryProvider implements PanoramaProvider {
     }
   }
 
-  async findRandom(_mode: ModeDef, signal: AbortSignal): Promise<Target> {
+  /** Výchozí bod hledání: v oblasti náhodně uvnitř území, jinak u některého z výchozích bodů. */
+  private startPoint(area: RegionArea | undefined): LatLng | null {
+    if (area) {
+      const [minLng, minLat, maxLng, maxLat] = area.bbox;
+      for (let i = 0; i < 1000; i++) {
+        const p = {
+          lng: randomBetween(minLng, maxLng, this.rng),
+          lat: randomBetween(minLat, maxLat, this.rng),
+        };
+        if (pointInGeometry(p, area.geometry)) return p;
+      }
+      return null;
+    }
+    const seed = randomItem(MAPILLARY_SEEDS, this.rng);
+    if (!seed) return null;
+    return {
+      lng: seed[0] + randomBetween(-1, 1, this.rng),
+      lat: Math.max(-80, Math.min(80, seed[1] + randomBetween(-0.7, 0.7, this.rng))),
+    };
+  }
+
+  async findRandom(region: RegionDef, signal: AbortSignal): Promise<Target> {
     const token = this.requireToken();
+    const area = region.area;
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-      const seed = randomItem(MAPILLARY_SEEDS, this.rng);
-      if (!seed) break;
-      const around: LatLng = {
-        lng: seed[0] + randomBetween(-1, 1, this.rng),
-        lat: Math.max(-80, Math.min(80, seed[1] + randomBetween(-0.7, 0.7, this.rng))),
-      };
+      const around = this.startPoint(area);
+      if (!around) break;
       const t = tileFor(around, COVERAGE_ZOOM);
       const tileRes = await this.get(
         `${TILES}/${t.z}/${t.x}/${t.y}?access_token=${encodeURIComponent(token)}`,
         signal,
       );
       if (!tileRes.ok) continue;
-      const points = panoPointsFromTile(await tileRes.arrayBuffer(), t.x, t.y, t.z);
+      const points = panoPointsFromTile(await tileRes.arrayBuffer(), t.x, t.y, t.z).filter(
+        (pt) => !area || pointInGeometry(pt, area.geometry),
+      );
       const p = randomItem(points, this.rng);
       if (!p) continue;
 
@@ -154,10 +190,15 @@ export class MapillaryProvider implements PanoramaProvider {
       const res = await this.get(`${GRAPH}/images?${params.toString()}`, signal);
       if (!res.ok) continue;
       const body = (await res.json()) as { data?: ImageHit[] };
-      const target = pickPano(body.data ?? [], this.rng);
+      const target = pickPano(body.data ?? [], this.rng, area);
       if (target) return target;
     }
-    throw new ProviderError('Nepodařilo se najít panorama. Zkus to znovu.', 'not-found');
+    throw new ProviderError(
+      area
+        ? `V oblasti ${region.name} se teď nepodařilo najít panorama. Zkus to znovu.`
+        : 'Nepodařilo se najít panorama. Zkus to znovu.',
+      'not-found',
+    );
   }
 
   async createViewer(container: HTMLElement, target: Target): Promise<PanoramaViewer> {

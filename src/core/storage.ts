@@ -1,9 +1,9 @@
 import { SAVED_GAME_TTL_MS } from './config';
-import type { GameState } from './game';
+import { validateSettings, type GameState, type Guess } from './game';
 import { isValidLatLng } from './geo';
-import { MODES } from './modes';
 
-const KEY = 'gg.game.v1';
+const KEY = 'gg.game.v2';
+const OLD_KEYS = ['gg.game.v1'];
 
 export interface KeyValueStore {
   getItem(key: string): string | null;
@@ -39,6 +39,7 @@ export function clearGame(store: KeyValueStore | null = safeStore()): void {
 export function loadGame(now: number, store: KeyValueStore | null = safeStore()): GameState | null {
   let raw: string | null;
   try {
+    for (const k of OLD_KEYS) store?.removeItem(k);
     raw = store?.getItem(KEY) ?? null;
   } catch {
     return null;
@@ -54,20 +55,25 @@ export function loadGame(now: number, store: KeyValueStore | null = safeStore())
   }
 }
 
+function isGuess(g: unknown): g is Guess {
+  if (typeof g !== 'object' || g === null) return false;
+  const x = g as Partial<Guess> & { point?: unknown; code?: unknown };
+  return (
+    (x.kind === 'point' && isValidLatLng(x.point)) ||
+    (x.kind === 'country' && typeof x.code === 'string')
+  );
+}
+
 function isGameState(v: unknown): v is GameState {
   if (typeof v !== 'object' || v === null) return false;
   const s = v as Partial<GameState>;
+  if (s.version !== 2 || typeof s.id !== 'string' || typeof s.updatedAt !== 'number') return false;
+  if (!s.settings || validateSettings(s.settings) !== null) return false;
+  if (!['loading', 'handoff', 'playing', 'result', 'finished'].includes(s.phase ?? ''))
+    return false;
+  const players = s.settings.players.length;
+  if (typeof s.current !== 'number' || s.current < 0 || s.current >= players) return false;
   return (
-    s.version === 1 &&
-    typeof s.id === 'string' &&
-    typeof s.mode === 'string' &&
-    s.mode in MODES &&
-    typeof s.timeLimitSec === 'number' &&
-    typeof s.updatedAt === 'number' &&
-    (s.phase === 'loading' ||
-      s.phase === 'playing' ||
-      s.phase === 'result' ||
-      s.phase === 'finished') &&
     Array.isArray(s.rounds) &&
     s.rounds.every(
       (r) =>
@@ -75,7 +81,9 @@ function isGameState(v: unknown): v is GameState {
         r !== null &&
         typeof r.target?.panoId === 'string' &&
         isValidLatLng(r.target.position) &&
-        (r.pin === null || isValidLatLng(r.pin)),
+        Array.isArray(r.turns) &&
+        r.turns.length === players &&
+        r.turns.every((t) => t && (t.pending === null || isGuess(t.pending))),
     )
   );
 }

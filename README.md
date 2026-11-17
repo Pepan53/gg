@@ -3,26 +3,29 @@
 Webová zeměpisná hra pro mobil (včetně skládacích telefonů typu Galaxy Fold) i počítač.
 Hráč se rozhlédne po panoramatu, na mapě označí, kde si myslí, že je, a za přesnost dostane body.
 
-**Stav:** fáze 1 (sólo hra o 5 kolech) ve **variantě A**: čistě statický web pro GitHub Pages,
-bez vlastního serveru a bez Googlu. Data jsou zdarma.
+**Hra:** https://pepan53.github.io/gg/
+
+**Stav:** fáze 2 (herní módy a hra více hráčů na jednom zařízení) ve **variantě A**: čistě
+statický web pro GitHub Pages, bez vlastního serveru a bez Googlu. Data jsou zdarma.
 
 ## Jak to funguje
 
-| Část                  | Řešení                                                                                                       | Cena                        |
-| --------------------- | ------------------------------------------------------------------------------------------------------------ | --------------------------- |
-| Hosting               | GitHub Pages (statické soubory)                                                                              | zdarma                      |
-| Panoramata, mód Svět  | [Mapillary](https://www.mapillary.com) (licence CC BY-SA)                                                    | zdarma                      |
-| Panoramata, mód Česko | [Mapy.com JS Panorama](https://developer.mapy.com/js-panorama-2/)                                            | v rámci bezplatných kreditů |
-| Název místa po kole   | Mapy.com reverzní geokódování                                                                                | v rámci bezplatných kreditů |
-| Mapa pro tipování     | [MapLibre GL](https://maplibre.org) + dlaždice [OpenFreeMap](https://openfreemap.org) (data © OpenStreetMap) | zdarma, bez klíče           |
+| Část                               | Řešení                                                                                                                                   | Cena                        |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| Hosting                            | GitHub Pages (statické soubory)                                                                                                          | zdarma                      |
+| Panoramata Svět, Česko + Slovensko | [Mapillary](https://www.mapillary.com) (licence CC BY-SA)                                                                                | zdarma                      |
+| Panoramata Česko                   | [Mapy.com JS Panorama](https://developer.mapy.com/js-panorama-2/)                                                                        | v rámci bezplatných kreditů |
+| Název místa po kole                | Mapy.com reverzní geokódování                                                                                                            | v rámci bezplatných kreditů |
+| Mapa pro tipování                  | [MapLibre GL](https://maplibre.org) + dlaždice [OpenFreeMap](https://openfreemap.org) (data © OpenStreetMap)                             | zdarma, bez klíče           |
+| Hranice států (mód Země, oblasti)  | [Natural Earth](https://www.naturalearthdata.com) 1:50m přes balíček world-atlas (public domain), české názvy z i18n-iso-countries (MIT) | zdarma, součást webu        |
 
 Mapy.com bez zapnuté placené spotřeby po vyčerpání bezplatných kreditů službu do konce měsíce
-**pozastaví**. Neúčtuje nic navíc. Hra pak v módu Česko ukáže chybu a mód Svět dál funguje.
+**pozastaví**. Neúčtuje nic navíc. Hra pak v oblasti Česko ukáže chybu, ostatní oblasti fungují.
 
 ## Požadavky
 
 - Node.js 22+
-- Účet Mapillary (pro mód Svět) a/nebo účet Seznam pro Mapy.com (pro mód Česko)
+- Účet Mapillary (oblasti Svět a Česko + Slovensko) a/nebo účet Seznam pro Mapy.com (oblast Česko)
 
 ## Instalace a spuštění
 
@@ -41,117 +44,170 @@ npm run lint         # ESLint
 npm run format       # Prettier
 npm run build        # produkční build do dist/
 npx playwright install chromium && npx playwright test   # e2e testy na 5 rozlišeních
+node scripts/build-countries.mjs   # znovu vygeneruje hranice států (src/data/countries.topo.json)
+node scripts/extract-cz.mjs        # znovu vygeneruje hranice Česka a Česka + Slovenska
 ```
 
 E2E testy umí použít i systémový Chrome: `CHROME_PATH=/usr/bin/google-chrome npx playwright test`.
+Běží proti buildu s `VITE_E2E=1`, který místo skutečných panoramat použije testovací náhradu
+(`src/providers/fake.ts`) a zpřístupní mapu testům. Do produkčního buildu se nedostane.
 
 ## Klíče a jejich omezení
 
 Obě proměnné se vloží do JavaScriptu při sestavení, **v prohlížeči jsou tedy veřejně
 viditelné**. Do repozitáře je nepřidávej, patří do `.env.local` nebo do GitHub Secrets.
 
-| Proměnná               | Kde získat                                                                                                   | Jak omezit                                                                                              |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
-| `VITE_MAPILLARY_TOKEN` | [Mapillary Developers](https://www.mapillary.com/dashboard/developers) → Register application → Client token | Token je určený pro klienta a dovoluje jen čtení veřejných dat.                                         |
-| `VITE_MAPY_API_KEY`    | [developer.mapy.com](https://developer.mapy.com/) → Můj účet → nový projekt                                  | V nastavení projektu povol jen doménu hry (např. `tvoje-jmeno.github.io`). Placenou spotřebu nezapínej. |
+| Proměnná               | Kde získat                                                                                                   | Jak omezit                                                                   |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| `VITE_MAPILLARY_TOKEN` | [Mapillary Developers](https://www.mapillary.com/dashboard/developers) → Register application → Client token | Jen oprávnění READ. Token je určený pro klienta.                             |
+| `VITE_MAPY_API_KEY`    | [developer.mapy.com](https://developer.mapy.com/) → Můj účet → projekt → API klíče                           | V sekci Referery povol jen `pepan53.github.io`. Placenou spotřebu nezapínej. |
 
-Bez klíče se knihovna daného poskytovatele **vůbec nenačte**. Mód je na úvodu vypnutý
+Bez klíče se knihovna daného poskytovatele **vůbec nenačte**. Oblast je na úvodu vypnutá
 s vysvětlením a pokud chybí oba klíče, hra zobrazí upozornění pro provozovatele.
+
+Po změně klíče v GitHub Secrets je potřeba **nové sestavení** (Actions → Nasazení na GitHub
+Pages → Run workflow), protože klíč se do hry dostane jen při buildu.
 
 ## Nasazení na GitHub Pages
 
-1. Vytvoř na GitHubu nový repozitář (např. `gg`) a nahraj do něj tento projekt.
-2. **Settings → Secrets and variables → Actions → New repository secret:** přidej
-   `VITE_MAPILLARY_TOKEN` a `VITE_MAPY_API_KEY`.
+1. Repozitář na GitHubu (zde `Pepan53/gg`, veřejný, protože bezplatné Pages jinak nejdou).
+2. **Settings → Secrets and variables → Actions:** `VITE_MAPILLARY_TOKEN` a `VITE_MAPY_API_KEY`.
 3. **Settings → Pages → Build and deployment → Source: GitHub Actions.**
 4. Každý push do větve `main` spustí `.github/workflows/deploy.yml` (lint, testy, build,
-   nasazení). Hra poběží na `https://<uživatel>.github.io/<repozitář>/`.
+   nasazení).
 
 ## Pravidla hry
 
-- 5 kol, v každém jedno panorama. Cílem je **počáteční poloha panoramatu**. Kam se hráč
-  během prohlížení přesune, nehraje roli.
+Každá hra má 5 kol. Na úvodu se volí **kdo hraje**, **oblast**, **typ hry**, **čas na tah**
+a **černobílé panorama**.
+
+### Společné
+
+- Cílem je **počáteční poloha panoramatu**. Kam se hráč během prohlížení přesune, nehraje roli.
 - Vzdálenost se počítá po povrchu Země (haversinův vzorec, poloměr 6 371,0088 km),
   nezaokrouhlená. Zaokrouhluje se až při zobrazení.
-- Body: `round(5000 × e^(-vzdálenost / škála))`, omezeno na 0 až 5 000. Nulová vzdálenost
-  = 5 000 bodů. Maximum za hru je 25 000.
-- **Škála:** Svět 1 500 km. Menší mapy:
+- Body za vzdálenost: `round(5000 × e^(-vzdálenost / škála))`, omezeno na 0 až 5 000.
+  Nulová vzdálenost = 5 000 bodů.
+- **Škála:** Svět 1 500 km. Menší oblasti:
   `škála = 1 500 km × (úhlopříčka oblasti / 20 015 km)`, kde 20 015 km je polovina obvodu
-  Země (největší možná vzdálenost). Česko (obálka 12,09-18,86° v. d., 48,55-51,06° s. š.,
-  úhlopříčka ~ 561 km) má škálu ~ 42 km. Pokryto testy v `tests/scoring.test.ts`.
-- **Časový limit** (bez limitu, 1, 2, 3, 5 min; nastavení v `src/core/config.ts`):
-  - konec kola je uložený jako pevný okamžik, takže po obnovení stránky čas běží dál,
-  - po vypršení se špendlíkem se vyhodnotí jeho poslední poloha,
-  - po vypršení bez špendlíku je 0 bodů a výsledek tip ani spojnici nekreslí,
-  - kolo jde vyhodnotit jen jednou; dvojklik, opakované potvrzení ani obnovení stránky
-    nevytvoří druhý výsledek (`submitGuess` funguje jen ve fázi `playing`).
-- Když se panorama nenačte, hráč může načítání zopakovat nebo vzít jiné místo.
-  Body z odehraných kol zůstávají a čas kola začne znovu.
+  Země. Česko (úhlopříčka ~ 561 km) má škálu ~ 42 km, Česko + Slovensko (obálka
+  12,09-22,57° v. d., 47,73-51,06° s. š., úhlopříčka ~ 843 km) ~ 63 km. Testy v
+  `tests/scoring.test.ts`.
+- **Časový limit** (bez limitu, 1, 2, 3, 5 min; v `src/core/config.ts`):
+  - konec tahu je uložený jako pevný okamžik, po obnovení stránky čas běží dál,
+  - po vypršení s tipem se vyhodnotí poslední tip,
+  - po vypršení bez tipu je 0 bodů a výsledek tip ani spojnici nekreslí,
+  - tah jde vyhodnotit jen jednou; dvojklik, opakované potvrzení ani obnovení stránky
+    nevytvoří druhý výsledek.
+- Když se panorama nenačte, jde načítání zopakovat nebo vzít jiné místo. Body z odehraných
+  kol zůstávají. Jiné místo začne kolo znovu (při více hráčích pro všechny, aby nikdo neměl
+  výhodu z jiného panoramatu).
 
-## Výběr lokací
+### Typy hry
 
-**Svět (Mapillary).** Náhodný bod na Zemi je většinou moře nebo místo bez snímků. Hra proto:
+| Typ           | Pravidla                                                                                                                                                                                                                             |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Klasika**   | Špendlík na mapu, body podle vzdálenosti. Volitelný časový limit.                                                                                                                                                                    |
+| **Countdown** | Pevně 30 s na tah. `body = round(body_za_vzdálenost × zbývající_s / 30)`, omezeno na 0 až 5 000. Rozhoduje okamžik potvrzení tipu. Při vypršení času platí pravidla časového limitu, násobitel je 0, takže i umístěný tip dá 0 bodů. |
+| **Země**      | Jen oblast Svět. Hráč klepne na stát, nedává špendlík. Správný stát 5 000 bodů, jiný 0. Ve výsledku je vidět vybraný i správný stát.                                                                                                 |
 
-1. vezme náhodný z ~180 výchozích bodů po celém světě (`src/data/mapillary-seeds.ts`)
-   a posune ho o náhodný kus (až ~100 km),
-2. stáhne dlaždici pokrytí Mapillary (z8, ~150 km) a vybere náhodný bod na sekvenci
-   označené `is_pano`,
-3. v okolí (čtverec 0,006° × 0,006°, API vyžaduje pod 0,01 °²) vyhledá snímky
-   s `is_pano=true` a typem kamery `spherical`/`equirectangular`,
-4. za cíl vezme zpřesněnou polohu snímku (`computed_geometry`).
+**Černobílé panorama** jde zapnout ke každému typu v oblastech s panoramaty Mapillary.
+Obraz se jen zobrazí bez barev (CSS filtr na plátně prohlížeče), atribuce zůstává čitelná
+a lišta hry ukazuje „Černobíle“ jako označení úpravy. U Mapy.com se nenabízí, viz licence.
 
-Mapillary jsou snímky od uživatelů, ne oficiální snímky jednoho poskytovatele. Kvalita
-proto kolísá (pozice kamery na helmě, stará data). Filtr bere jen 360° snímky.
+### Mód Země: hranice a sporná území
 
-**Česko (Mapy.com).** Náhodný bod uvnitř hranice Česka (Natural Earth 1:50 000,
-`src/data/cz.json`, vygenerováno `scripts/extract-cz.mjs`), `panoramaExists` s poloměrem
-400 m a pak **kontrola skutečné polohy nalezeného panoramatu** uvnitř hranic. Panorama za
-hranicí se zahodí; když se po 15 pokusech nic nenajde, hra nabídne opakování a jiný stát
-nikdy nepoužije. Mapy.com panoramata pokrývají jen Česko, proto mód Česko + Slovensko
-v této podobě nejde. Slovensko by šlo doplnit přes Mapillary.
+- Stát cíle i stát kliknutí určuje stejná funkce: bod v polygonu nad hranicemi Natural Earth
+  1:50m (`src/core/countries.ts`). Mapa a vyhodnocení se tedy vždy shodnou.
+- Panorama, které neleží v žádném státě (moře, pobřeží zjednodušené na měřítko 1:50m), se
+  nepoužije a hra hledá jiné (až 6 pokusů).
+- **Kliknutí do moře** nic nevybere; hra napíše „Tady žádný stát není. Klepni na pevninu.“
+- **Sporná území** podle Natural Earth (de facto stav), s těmito úpravami:
+  Somaliland se počítá k Somálsku, Severní Kypr ke Kypru, Indickooceánská území k Austrálii,
+  Kosovo je samostatný stát, ledovec Siačen a Antarktida se nehrají.
+- Zámořská území mají kód svého státu podle Natural Earth (např. Francouzská Guyana patří
+  pod Francii).
+- Státy přes datovou hranici (Rusko, Fidži) jsou „rozbalené“ za 180°, aby se mapa a test
+  bodu v polygonu chovaly správně.
+
+### Oblasti
+
+| Oblast                | Poskytovatel | Výběr místa                                                                                                                                       |
+| --------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Svět**              | Mapillary    | ~180 výchozích bodů po světě, náhodný posun, dlaždice pokrytí z8, jen 360° snímky.                                                                |
+| **Česko + Slovensko** | Mapillary    | Náhodný bod uvnitř hranic ČR a SR, dlaždice pokrytí, a **ověření skutečné (zpřesněné) polohy snímku** uvnitř hranic. Snímek za hranicí se zahodí. |
+| **Česko**             | Mapy.com     | Náhodný bod v Česku, `panoramaExists` v okruhu 400 m, ověření skutečné polohy panoramatu uvnitř hranic.                                           |
+
+Když se v oblasti po všech pokusech nic nenajde, hra nabídne opakování a **nikdy nepoužije
+místo mimo oblast**.
+
+### Víc hráčů na jednom zařízení
+
+- 2 až 6 hráčů, bez účtů. Jména se nesmí opakovat.
+- Každé kolo hrají všichni **stejné panorama**. Hráči se střídají a před každým tahem je
+  **předávací obrazovka** se jménem hráče. Čas tahu začne běžet až po stisku „Jsem X, začít“.
+- Každý tah začíná na původním místě a výhledu panoramatu (prohlížeč se vytvoří znovu).
+- Během tahu se neukazují tipy ostatních ani cíl. Po obnovení stránky během tahu se nejdřív
+  ukáže předávací obrazovka, ne rozehraný tah.
+- Po odehrání všech hráčů společný výsledek: mapa se všemi tipy (každý hráč má svou barvu),
+  vzdálenosti, body za kolo a průběžný součet.
+- Po 5 kolech pořadí podle součtu bodů. Při shodě mají hráči **společné pořadí**
+  (1., 1., 3.).
+- Předávací obrazovka zajišťuje soukromí jen organizačně. Tipy všech hráčů jsou uložené
+  v prohlížeči (`localStorage`) a zvědavý hráč je tam najde.
 
 ## Data, atribuce a licence
 
-- **Mapillary:** snímky jsou pod CC BY-SA 4.0. Prohlížeč Mapillary ukazuje autora
-  a odkaz sám (komponenta attribution je zapnutá). Hra nic neukládá ani nestahuje mimo
-  běžné zobrazení.
-- **Mapy.com:** JS Panorama zobrazuje atribuci sama. Podmínky vyžadují u ostatních funkcí
-  (název místa) logo Mapy.com; **zatím je tam jen textový odkaz, viz Známá omezení**.
-  Rozšířený tarif (10 mil. kreditů měsíčně) vyžaduje zápis v katalogu referenčních projektů.
+- **Mapillary:** snímky jsou pod CC BY-SA 4.0. Prohlížeč Mapillary ukazuje autora a odkaz
+  sám. Černobílé zobrazení je úprava díla, kterou CC BY-SA dovoluje při uvedení autora
+  a označení změny (lišta „Černobíle“).
+- **Mapy.com:** JS Panorama zobrazuje atribuci sama. Podmínky úpravu obrazu panoramat
+  výslovně neřeší, proto ji hra **nenabízí** (místo toho jde hrát černobíle v oblasti
+  Česko + Slovensko z Mapillary). Před případným zapnutím je potřeba ověřit u Seznamu.
+  U názvu místa zatím chybí logo Mapy.com (jen text), viz Známá omezení.
 - **Mapa:** © OpenStreetMap contributors (ODbL), dlaždice OpenFreeMap. Atribuci zobrazuje
   MapLibre v rohu mapy a hra ji nepřekrývá.
-- **Uložená data:** v `localStorage` prohlížeče je jen rozehraná hra (ID panoramat,
-  souřadnice cílů a tipů, body) a volba módu. Hra se po 24 h nečinnosti zahodí. Názvy míst
-  z Mapy.com se drží jen v paměti. Žádná databáze ani předem stažené lokace neexistují.
+- **Hranice:** Natural Earth (public domain), české názvy států z i18n-iso-countries (MIT).
+  Stát cíle se určuje z naší vlastní kopie hranic; nevolá se kvůli tomu žádná služba
+  poskytovatele panoramat.
+- **Uložená data:** v `localStorage` je jen rozehraná hra (ID panoramat, souřadnice cílů
+  a tipů, body, jména hráčů) a poslední nastavení. Hra se po 24 h nečinnosti zahodí.
+  Názvy míst z Mapy.com se drží jen v paměti. Žádná databáze ani předem stažené lokace.
 - Licenční podmínky jsou ověřené jen v rozsahu veřejné dokumentace (listopad 2026).
-  Před veřejným spuštěním je dobré přečíst
-  [Mapillary Terms](https://www.mapillary.com/terms) a
-  [podmínky Mapy.com API](https://developer.mapy.com/terms-and-conditions/).
+  Před širším zveřejněním je dobré přečíst [Mapillary Terms](https://www.mapillary.com/terms)
+  a [podmínky Mapy.com API](https://developer.mapy.com/terms-and-conditions/).
 
 ## Známá omezení a podvádění
 
 Varianta A **nemá server**. Celá logika včetně cíle kola běží v prohlížeči, takže:
 
 - **Cíl lze zjistit** z vývojářských nástrojů, z `localStorage` i z odkazu v atribuci
-  Mapillary. Hra je férová jen mezi lidmi, kteří podvádět nechtějí.
-- Časový limit hlídá prohlížeč, jde tedy obejít.
-- Požadavky zadání na serverové utajení, serverové vyhodnocení a ochranu odpovědí API
-  tato varianta **vědomě nesplňuje**. Řeší je varianta B (Cloudflare Workers + D1, také
-  zdarma) se stejným herním jádrem (`src/core`).
-- Mapy.com: logo u názvu místa zatím chybí (jen text). Spotřeba kreditů jednoho panoramatu
-  (účtuje se po dlaždicích) je potřeba změřit v účtu Mapy.com.
-- Mapillary: některé oblasti mají málo 360° snímků. Pokud se 12× nic nenajde, hra nabídne
-  opakování.
-- Hra nemá účty, žebříček ani hru více hráčů (fáze 2).
+  Mapillary. Totéž platí pro tipy ostatních hráčů a černobílý filtr jde vypnout.
+- Časový limit a Countdown hlídá prohlížeč, jde je tedy obejít. Countdown počítá čas podle
+  hodin zařízení, ne podle serveru.
+- Požadavky zadání na serverové utajení, serverové vyhodnocení a ochranu odpovědí API tato
+  varianta **vědomě nesplňuje**. Řeší je varianta B (Cloudflare Workers + D1, také zdarma)
+  se stejným herním jádrem (`src/core`).
+- Mapillary: některé oblasti mají málo 360° snímků. Kvalita snímků kolísá (jsou od uživatelů).
+  Dlaždicové načítání obrazu (`imageTiling`) je vypnuté, protože ho aktuální API odmítá;
+  snímky se načítají v rozlišení 2048 px.
+- Mapy.com pokrývá jen Česko, proto Česko + Slovensko jede přes Mapillary.
+- Mapy.com: logo u názvu místa zatím chybí (jen text). Spotřebu kreditů za panorama je
+  potřeba sledovat v účtu Mapy.com.
+- Hranice 1:50m jsou zjednodušené; u hranic a pobřeží se může stát, že panorama těsně
+  u hranice padne do sousedního státu. Hra pak počítá se státem podle Natural Earth.
+- Hranice států zvětší stažení hry v módu Země o ~230 kB (komprimovaně), načítají se jen tam.
 
 ## Struktura
 
 ```
-src/core/       herní logika bez závislosti na UI (vzdálenost, body, stav hry, uložení)
+src/core/       herní logika bez UI: vzdálenost, body, stav hry (hráči, tahy, módy), uložení, státy
 src/providers/  poskytovatelé panoramat (Mapillary, Mapy.com, testovací náhrada) a název místa
-src/ui/         DOM pomocníci a mapy (MapLibre)
-src/app.ts      obrazovky: úvod, načítání, hra, výsledek kola, konec hry
+src/ui/         DOM pomocníci a mapy (MapLibre): tip bodem, výběr státu, výsledek
+src/data/       hranice (Natural Earth) a výchozí body pro Mapillary
+src/app.ts      obrazovky: úvod, načítání, předávání, hra, výsledek kola, konec hry
 tests/          Vitest (jednotkové a integrační), tests/e2e Playwright (5 rozlišení)
+scripts/        generování dat hranic
 ```
 
 Rozložení: na úzkém displeji (telefon, zavřený Fold) je mapa vysouvací panel přes celou

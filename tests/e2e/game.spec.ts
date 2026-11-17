@@ -24,7 +24,8 @@ const isNarrow = (page: Page) => {
 };
 
 async function openMap(page: Page) {
-  if (isNarrow(page)) {
+  const panel = page.locator('.mappanel');
+  if (isNarrow(page) && (await panel.getAttribute('data-state')) === 'closed') {
     await page.getByRole('button', { name: 'Mapa a tip' }).click();
     // Počkat na dojetí vysouvací animace panelu.
     await page.waitForTimeout(400);
@@ -44,12 +45,61 @@ async function guess(page: Page, dx = 0, dy = 0) {
   await confirm.click();
 }
 
-async function startGame(page: Page, mode: 'Svět' | 'Česko' = 'Svět', limit = 'Bez limitu') {
+type Region = 'Svět' | 'Česko' | 'Česko + Slovensko';
+const REGION_RE: Record<Region, RegExp> = {
+  Svět: /^Svět /,
+  Česko: /^Česko Jen Česko\./,
+  'Česko + Slovensko': /^Česko \+ Slovensko/,
+};
+
+async function startGame(
+  page: Page,
+  region: Region = 'Svět',
+  limit = 'Bez limitu',
+  opts: { type?: 'Klasika' | 'Countdown' | 'Země'; gray?: boolean; players?: string[] } = {},
+) {
   await page.goto('/');
-  await page.getByRole('radio', { name: new RegExp(`^${mode}`) }).check();
-  await page.getByRole('radio', { name: limit, exact: true }).check();
+  await page.getByRole('radio', { name: REGION_RE[region] }).check();
+  if (opts.type) await page.getByRole('radio', { name: new RegExp(`^${opts.type} `) }).check();
+  if (opts.type !== 'Countdown')
+    await page.getByRole('radio', { name: limit, exact: true }).check();
+  if (opts.gray) await page.getByRole('checkbox', { name: /Černobílé panorama/ }).check();
+  if (opts.players) {
+    await page.getByRole('radio', { name: 'Víc hráčů na jednom zařízení' }).check();
+    for (let i = 2; i < opts.players.length; i++) {
+      await page.getByRole('button', { name: '+ Přidat hráče' }).click();
+    }
+    for (const [i, name] of opts.players.entries()) {
+      await page.getByRole('textbox', { name: `Jméno hráče ${i + 1}` }).fill(name);
+    }
+  }
   await page.getByRole('button', { name: 'Hrát' }).click();
-  await expect(page.getByTestId('fake-pano')).toBeVisible();
+  if (!opts.players) await expect(page.getByTestId('fake-pano')).toBeVisible();
+}
+
+/** Klikne do mapy pro tip na danou zeměpisnou polohu (testovací build zpřístupní mapu). */
+async function clickLngLat(page: Page, lng: number, lat: number) {
+  await openMap(page);
+  await page.waitForFunction(() =>
+    (window as unknown as { __ggMap?: { loaded(): boolean } }).__ggMap?.loaded(),
+  );
+  const pt = await page.evaluate(
+    ([x, y]) => {
+      const m = (
+        window as unknown as {
+          __ggMap: {
+            project(c: [number, number]): { x: number; y: number };
+            getCanvas(): HTMLCanvasElement;
+          };
+        }
+      ).__ggMap;
+      const p = m.project([x as number, y as number]);
+      const r = m.getCanvas().getBoundingClientRect();
+      return { x: r.left + p.x, y: r.top + p.y };
+    },
+    [lng, lat],
+  );
+  await page.mouse.click(pt.x, pt.y);
 }
 
 test('celá hra o pěti kolech', async ({ page }) => {
@@ -101,6 +151,7 @@ test('mapa na mobilu jde otevřít přes celou obrazovku a zavřít', async ({ p
   await expect(panel).toHaveAttribute('data-state', 'open');
   await page.getByRole('button', { name: 'Zvětšit mapu' }).click();
   await expect(panel).toHaveAttribute('data-state', 'full');
+  await page.waitForTimeout(400);
   const box = await panel.boundingBox();
   expect(box?.height).toBeGreaterThan((page.viewportSize()?.height ?? 0) - 2);
   await page.getByRole('button', { name: 'Zavřít mapu' }).click();
@@ -121,8 +172,9 @@ test('potvrzení je dostupné až po umístění špendlíku a dvojí odeslání
   const confirm = page.getByRole('button', { name: 'Potvrdit tip' });
   await confirm.dblclick();
   await expect(page.getByRole('heading', { name: 'Kolo 1 z 5' })).toBeVisible();
-  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('gg.game.v1') ?? '{}'));
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('gg.game.v2') ?? '{}'));
   expect(saved.rounds).toHaveLength(1);
+  expect(saved.rounds[0].turns).toHaveLength(1);
   expect(saved.phase).toBe('result');
 });
 
@@ -161,7 +213,7 @@ test('vypršení času se špendlíkem vyhodnotí poslední polohu', async ({ pa
   if (!box) throw new Error('mapa nemá rozměr');
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   await page.clock.fastForward(61_000);
-  await expect(page.getByText('Čas vypršel, počítá se poslední poloha špendlíku.')).toBeVisible();
+  await expect(page.getByText('Čas vypršel, počítá se poslední tip.')).toBeVisible();
   await expect(page.locator('.stats')).toContainText('Body');
 });
 
@@ -176,4 +228,113 @@ test('bez klíčů se knihovny poskytovatelů nenačtou a hra to srozumitelně �
   await expect(page.getByRole('button', { name: 'Hrát' })).toBeDisabled();
   await page.waitForTimeout(500);
   expect(log.filter((u) => /mapillary|mapy\.(cz|com)/.test(u))).toEqual([]);
+});
+
+// ---------- fáze 2 ----------
+
+test('Countdown: 30 s na tah a body násobené zbývajícím časem', async ({ page }) => {
+  test.skip(test.info().project.name !== 'desktop' && test.info().project.name !== 'mobil');
+  await page.clock.install();
+  await offline(page);
+  await startGame(page, 'Česko', 'Bez limitu', { type: 'Countdown' });
+  await expect(page.locator('.hud__timer')).toContainText(/0:(29|30)/);
+  await page.clock.fastForward(15_000);
+  await clickLngLat(page, 14.4213, 50.0875);
+  await page.getByRole('button', { name: 'Potvrdit tip' }).click();
+  await expect(page.locator('.result__panel')).toContainText('za čas');
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('gg.game.v2') ?? '{}'));
+  const r = saved.rounds[0].turns[0].result;
+  expect(r.multiplier).toBeGreaterThan(0.3);
+  expect(r.multiplier).toBeLessThan(0.55);
+  expect(r.points).toBe(Math.round(r.basePoints * r.multiplier));
+});
+
+test('Země: výběr státu kliknutím, moře nic nevybere, správný stát 5 000 bodů', async ({
+  page,
+}) => {
+  test.skip(test.info().project.name !== 'desktop' && test.info().project.name !== 'mobil');
+  await offline(page);
+  await startGame(page, 'Svět', 'Bez limitu', { type: 'Země' });
+  await clickLngLat(page, -30, 0);
+  await expect(page.locator('.maphint')).toContainText('Tady žádný stát není');
+  await expect(page.getByRole('button', { name: 'Potvrdit tip' })).toBeDisabled();
+  await clickLngLat(page, 2.35, 46.5);
+  await expect(page.locator('.maphint')).toContainText('Vybráno: Francie');
+  await page.getByRole('button', { name: 'Potvrdit tip' }).click();
+  await expect(page.locator('.verdict')).toContainText('Správně! 5 000 bodů');
+  await expect(page.locator('.stats')).toContainText('Francie');
+});
+
+test('Země není nabízená pro Česko a černobíle ne pro Mapy.com', async ({ page }) => {
+  test.skip(test.info().project.name !== 'desktop');
+  await offline(page);
+  await page.goto('/');
+  await page.getByRole('radio', { name: REGION_RE['Česko'] }).check();
+  await expect(page.getByRole('radio', { name: /^Země / })).toBeDisabled();
+  await expect(page.getByRole('checkbox', { name: /Černobílé panorama/ })).toBeDisabled();
+  await page.getByRole('radio', { name: REGION_RE['Česko + Slovensko'] }).check();
+  await expect(page.getByRole('checkbox', { name: /Černobílé panorama/ })).toBeEnabled();
+});
+
+test('Grayscale: panorama se zobrazí černobíle a je to vidět v liště', async ({ page }) => {
+  test.skip(test.info().project.name !== 'desktop' && test.info().project.name !== 'fold-zavreny');
+  await offline(page);
+  await startGame(page, 'Česko + Slovensko', 'Bez limitu', { gray: true });
+  await expect(page.locator('.pano.pano--gray')).toHaveCount(1);
+  await expect(page.locator('.hud')).toContainText('Černobíle');
+});
+
+test('Víc hráčů: předávání, skryté tipy, společný výsledek a pořadí', async ({ page }) => {
+  await offline(page);
+  await startGame(page, 'Česko', 'Bez limitu', { players: ['Ana', 'Bob'] });
+  for (let round = 1; round <= 5; round++) {
+    for (const [i, name] of ['Ana', 'Bob'].entries()) {
+      await expect(page.getByRole('heading', { name: `Na tahu je ${name}` })).toBeVisible();
+      await page.getByRole('button', { name: `Jsem ${name}, začít` }).click();
+      await expect(page.getByTestId('fake-pano')).toBeVisible();
+      await expect(page.locator('.hud')).toContainText(name);
+      await openMap(page);
+      // Na mapě nesmí být tip jiného hráče.
+      await expect(page.locator('.guessmap .maplibregl-marker')).toHaveCount(0);
+      await guess(page, i === 0 ? 0 : 40, 0);
+    }
+    await expect(page.getByRole('heading', { name: `Kolo ${round} z 5` })).toBeVisible();
+    await expect(page.locator('.rounds tbody tr')).toHaveCount(2);
+    await page.getByRole('button', { name: round < 5 ? 'Další kolo' : 'Celkový výsledek' }).click();
+  }
+  await expect(page.getByRole('heading', { name: 'Konec hry' })).toBeVisible();
+  await expect(page.locator('.standings tbody tr')).toHaveCount(2);
+  await expect(page.locator('.bigscore')).toContainText(/Vyhrává|Remíza/);
+});
+
+test('Víc hráčů: obnovení stránky během tahu nejdřív ukáže předávací obrazovku', async ({
+  page,
+}) => {
+  test.skip(test.info().project.name !== 'desktop' && test.info().project.name !== 'mobil');
+  await offline(page);
+  await startGame(page, 'Svět', 'Bez limitu', { players: ['Ana', 'Bob', 'Cyril'] });
+  await page.getByRole('button', { name: 'Jsem Ana, začít' }).click();
+  await guess(page);
+  await page.getByRole('button', { name: 'Jsem Bob, začít' }).click();
+  await expect(page.getByTestId('fake-pano')).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Na tahu je Bob' })).toBeVisible();
+  await expect(page.getByTestId('fake-pano')).toHaveCount(0);
+  await expect(page.locator('.guessmap')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Jsem Bob, pokračovat' }).click();
+  await expect(page.locator('.hud')).toContainText('Bob');
+});
+
+test('Víc hráčů: stejná jména nejdou', async ({ page }) => {
+  test.skip(test.info().project.name !== 'desktop');
+  await offline(page);
+  await page.goto('/');
+  await page.getByRole('radio', { name: 'Víc hráčů na jednom zařízení' }).check();
+  await page.getByRole('textbox', { name: 'Jméno hráče 1' }).fill('Ana');
+  await page.getByRole('textbox', { name: 'Jméno hráče 2' }).fill('ana');
+  await page.getByRole('button', { name: 'Hrát' }).click();
+  await expect(page.locator('.form-error')).toContainText('nesmí opakovat');
+  for (let i = 0; i < 4; i++) await page.getByRole('button', { name: '+ Přidat hráče' }).click();
+  await expect(page.getByRole('textbox')).toHaveCount(6);
+  await expect(page.getByRole('button', { name: '+ Přidat hráče' })).toBeHidden();
 });

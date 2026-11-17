@@ -1,17 +1,15 @@
-import type { MultiPolygon, Polygon } from 'geojson';
 import type { Target } from '../core/game';
 import { isValidLatLng, type LatLng } from '../core/geo';
-import type { ModeDef } from '../core/modes';
+import { CZ_GEOMETRY, type RegionDef } from '../core/modes';
 import { pointInGeometry } from '../core/polygon';
 import { defaultRng, randomBetween, type Rng } from '../core/random';
-import czBorder from '../data/cz.json';
 import { ProviderError, type PanoramaProvider, type PanoramaViewer } from './types';
 
 const SCRIPT_URL = 'https://api.mapy.cz/js/panorama/v1/panorama.js';
 const SEARCH_RADIUS_M = 400;
 const MAX_ATTEMPTS = 15;
 
-export const CZ_GEOMETRY = czBorder.geometry as Polygon | MultiPolygon;
+export { CZ_GEOMETRY };
 
 interface PanoInfo {
   lon: number;
@@ -113,7 +111,7 @@ export class MapyProvider implements PanoramaProvider {
     return this.apiKey;
   }
 
-  async findRandom(_mode: ModeDef, signal: AbortSignal): Promise<Target> {
+  async findRandom(_region: RegionDef, signal: AbortSignal): Promise<Target> {
     const apiKey = this.requireKey();
     const Panorama = await this.load();
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {

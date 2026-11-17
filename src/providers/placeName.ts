@@ -13,10 +13,14 @@ export function placeNameFromItems(items: RGeocodeItem[]): string | null {
   const first = items[0];
   if (!first) return null;
   const isAddress = first.type === 'regional.address' || first.type === 'regional.street';
-  const label = isAddress
-    ? first.location
-    : [first.name, first.location].filter(Boolean).join(', ');
-  return label && label.trim() ? label.trim() : null;
+  const name = first.name?.trim() ?? '';
+  const location = first.location?.trim() ?? '';
+  // "Veselý Žďár" + "Veselý Žďár, Česko" -> jen "Veselý Žďár, Česko".
+  const label =
+    isAddress || !name || location.startsWith(name)
+      ? location || name
+      : [name, location].filter(Boolean).join(', ');
+  return label || null;
 }
 
 /**

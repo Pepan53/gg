@@ -1,5 +1,5 @@
 import type { Target } from '../core/game';
-import type { ModeDef } from '../core/modes';
+import type { RegionDef } from '../core/modes';
 import type { PanoramaProvider, PanoramaViewer } from './types';
 
 /**
@@ -13,6 +13,13 @@ const PLACES: Record<string, { lat: number; lng: number }[]> = {
     { lat: 40.6892, lng: -74.0445 },
     { lat: 35.6586, lng: 139.7454 },
     { lat: -22.9519, lng: -43.2105 },
+  ],
+  czsk: [
+    { lat: 48.1486, lng: 17.1077 },
+    { lat: 50.0875, lng: 14.4213 },
+    { lat: 48.7164, lng: 21.2611 },
+    { lat: 49.1951, lng: 16.6068 },
+    { lat: 49.2231, lng: 18.7394 },
   ],
   cz: [
     { lat: 50.0875, lng: 14.4213 },
@@ -32,7 +39,7 @@ export class FakeProvider implements PanoramaProvider {
     return true;
   }
 
-  async findRandom(mode: ModeDef): Promise<Target> {
+  async findRandom(mode: RegionDef): Promise<Target> {
     const list = PLACES[mode.id] ?? PLACES['world'] ?? [];
     const position = list[this.n++ % list.length] ?? { lat: 0, lng: 0 };
     await new Promise((r) => setTimeout(r, 50));

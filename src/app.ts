@@ -1,20 +1,38 @@
-import { ROUNDS_PER_GAME, TIME_LIMITS_SEC } from './core/config';
+import { MAX_PLAYERS, ROUNDS_PER_GAME, TIME_LIMITS_SEC } from './core/config';
+import { loadCountries, type CountryIndex } from './core/countries';
 import {
   advance,
+  beginTurn,
   createGame,
   currentRound,
+  currentTurn,
   expireIfNeeded,
-  placePin,
+  isMultiplayer,
+  placeGuess,
+  playerTotal,
   remainingMs,
   replaceTarget,
+  standings,
   startRound,
   submitGuess,
-  totalPoints,
+  turnLimitSec,
+  validateSettings,
+  type GameSettings,
   type GameState,
+  type Guess,
   type Round,
+  type Target,
+  type TurnResult,
 } from './core/game';
 import { formatDistance, type LatLng } from './core/geo';
-import { MODES, type ModeDef, type ModeId, type ProviderId } from './core/modes';
+import {
+  GAME_TYPES,
+  REGIONS,
+  type GameType,
+  type ProviderId,
+  type RegionDef,
+  type RegionId,
+} from './core/modes';
 import { newId } from './core/random';
 import { MAX_POINTS } from './core/scoring';
 import { clearGame, loadGame, saveGame } from './core/storage';
@@ -24,26 +42,47 @@ import { MapyProvider } from './providers/mapy';
 import { PLACE_NAME_UNAVAILABLE, fetchPlaceName } from './providers/placeName';
 import { ProviderError, type PanoramaProvider, type PanoramaViewer } from './providers/types';
 import { formatClock, formatLimit, formatPoints, h } from './ui/dom';
-import { createGuessMap, createResultMap, type GuessMap } from './ui/maps';
+import {
+  TARGET_COLOR,
+  createCountryMap,
+  createGuessMap,
+  createResultMap,
+  playerColor,
+  type CountryMap,
+  type GuessMap,
+} from './ui/maps';
 
 type Cleanup = () => void;
 
-const PREFS_KEY = 'gg.prefs.v1';
+const PREFS_KEY = 'gg.prefs.v2';
+/** Kolikrát zkusit jiné panorama, když v módu Země neleží v žádném státě. */
+const COUNTRY_RETRIES = 6;
 
-interface Prefs {
-  mode: ModeId;
-  timeLimitSec: number;
-}
+type Prefs = GameSettings & { multi: boolean };
+
+const DEFAULT_PREFS: Prefs = {
+  region: 'world',
+  type: 'classic',
+  grayscale: false,
+  timeLimitSec: 0,
+  players: ['Hráč 1', 'Hráč 2'],
+  multi: false,
+};
 
 function loadPrefs(): Prefs {
   try {
-    const p = JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') as Partial<Prefs>;
-    return {
-      mode: p.mode && p.mode in MODES ? p.mode : 'world',
-      timeLimitSec: TIME_LIMITS_SEC.includes(p.timeLimitSec ?? -1) ? (p.timeLimitSec as number) : 0,
+    const p = {
+      ...DEFAULT_PREFS,
+      ...(JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') as Partial<Prefs>),
     };
+    if (!(p.region in REGIONS)) p.region = 'world';
+    if (!(p.type in GAME_TYPES)) p.type = 'classic';
+    if (!TIME_LIMITS_SEC.includes(p.timeLimitSec)) p.timeLimitSec = 0;
+    if (!Array.isArray(p.players) || p.players.length < 2) p.players = [...DEFAULT_PREFS.players];
+    p.players = p.players.slice(0, MAX_PLAYERS).map(String);
+    return p;
   } catch {
-    return { mode: 'world', timeLimitSec: 0 };
+    return { ...DEFAULT_PREFS };
   }
 }
 
@@ -60,6 +99,8 @@ function errorText(e: unknown): string {
   if (!navigator.onLine) return 'Jsi offline. Připoj se k internetu a zkus to znovu.';
   return 'Něco se pokazilo. Zkus to znovu.';
 }
+
+const pct = (x: number) => x.toLocaleString('cs-CZ', { maximumFractionDigits: 2 });
 
 export class App {
   private state: GameState | null = null;
@@ -85,6 +126,11 @@ export class App {
     const saved = loadGame(Date.now());
     if (saved && saved.phase !== 'finished') {
       this.setState(expireIfNeeded(saved, Date.now()));
+      // Po obnovení stránky při hře více hráčů nejdřív předávací obrazovka,
+      // aby se cizí tah neukázal někomu jinému.
+      if (isMultiplayer(this.state as GameState) && this.state?.phase === 'playing') {
+        return this.renderHandoff(true);
+      }
       this.route();
     } else {
       this.renderIntro();
@@ -99,18 +145,20 @@ export class App {
     saveGame(s);
   }
 
-  private mode(): ModeDef {
-    return MODES[this.state?.mode ?? 'world'];
+  private region(): RegionDef {
+    return REGIONS[this.state?.settings.region ?? 'world'];
   }
 
   private provider(): PanoramaProvider {
-    return this.providers[this.mode().provider];
+    return this.providers[this.region().provider];
   }
 
   private route(): void {
     switch (this.state?.phase) {
       case 'loading':
         return void this.loadRound();
+      case 'handoff':
+        return this.renderHandoff(false);
       case 'playing':
         return this.renderGame();
       case 'result':
@@ -144,35 +192,137 @@ export class App {
     if (el) el.hidden = navigator.onLine;
   }
 
+  /** Mapa výsledku s úklidem při odchodu z obrazovky. */
+  private mountResultMap(
+    mapEl: HTMLElement,
+    build: () => ReturnType<typeof createResultMap>,
+  ): void {
+    let destroyed = false;
+    let map: { resize(): void; destroy(): void } | null = null;
+    this.cleanups.push(() => {
+      destroyed = true;
+      map?.destroy();
+    });
+    void build().then(
+      (m) => {
+        if (destroyed) m.destroy();
+        else map = m;
+      },
+      () => mapEl.append(h('p', { class: 'mapmsg', role: 'alert' }, 'Mapu se nepodařilo načíst.')),
+    );
+    const ro = new ResizeObserver(() => map?.resize());
+    ro.observe(mapEl);
+    this.cleanups.push(() => ro.disconnect());
+  }
+
   // ---------- úvod ----------
 
   private renderIntro(): void {
     const prefs = loadPrefs();
     const saved = loadGame(Date.now());
     const resumable = saved && saved.phase !== 'finished' ? saved : null;
-    const configured = (id: ModeId) => this.providers[MODES[id].provider].isConfigured();
-    if (!configured(prefs.mode)) {
-      const firstOk = (Object.keys(MODES) as ModeId[]).find(configured);
-      if (firstOk) prefs.mode = firstOk;
-    }
+    const configured = (id: RegionId) => this.providers[REGIONS[id].provider].isConfigured();
+    const regionIds = Object.keys(REGIONS) as RegionId[];
+    const anyConfigured = regionIds.some(configured);
+    if (!configured(prefs.region)) prefs.region = regionIds.find(configured) ?? 'world';
 
-    const modeInputs = (Object.values(MODES) as ModeDef[]).map((m) => {
-      const ok = configured(m.id);
+    // --- hráči ---
+    const playerList = h('ol', { class: 'players' });
+    const addBtn = h('button', { class: 'btn', type: 'button' }, '+ Přidat hráče');
+    const renderPlayers = () => {
+      playerList.replaceChildren(
+        ...prefs.players.map((name, i) =>
+          h(
+            'li',
+            {},
+            h('input', {
+              type: 'text',
+              class: 'input',
+              value: name,
+              maxlength: 20,
+              required: true,
+              'aria-label': `Jméno hráče ${i + 1}`,
+              oninput: (e: Event) => (prefs.players[i] = (e.target as HTMLInputElement).value),
+            }),
+            prefs.players.length > 2 &&
+              h(
+                'button',
+                {
+                  class: 'btn btn--ghost',
+                  type: 'button',
+                  'aria-label': `Odebrat hráče ${i + 1}`,
+                  onclick: () => {
+                    prefs.players.splice(i, 1);
+                    renderPlayers();
+                  },
+                },
+                'Odebrat',
+              ),
+          ),
+        ),
+      );
+      addBtn.hidden = prefs.players.length >= MAX_PLAYERS;
+    };
+    addBtn.addEventListener('click', () => {
+      prefs.players.push(`Hráč ${prefs.players.length + 1}`);
+      renderPlayers();
+      playerList.querySelector<HTMLInputElement>('li:last-child input')?.select();
+    });
+    renderPlayers();
+    const playersBox = h('div', { class: 'players-box' }, playerList, addBtn);
+
+    const whoInputs = [
+      ['solo', 'Sám'],
+      ['multi', 'Víc hráčů na jednom zařízení'],
+    ].map(([v, label]) =>
+      h(
+        'label',
+        { class: 'pill' },
+        h('input', {
+          type: 'radio',
+          name: 'who',
+          value: v,
+          checked: (v === 'multi') === prefs.multi,
+        }),
+        h('span', {}, label),
+      ),
+    );
+
+    // --- oblast, typ, čas, černobíle ---
+    const regionInputs = regionIds.map((id) => {
+      const r = REGIONS[id];
+      const ok = configured(id);
       return h(
         'label',
         { class: `choice${ok ? '' : ' choice--disabled'}` },
         h('input', {
           type: 'radio',
-          name: 'mode',
-          value: m.id,
-          checked: ok && prefs.mode === m.id,
+          name: 'region',
+          value: id,
+          checked: ok && prefs.region === id,
           disabled: !ok,
         }),
         h(
           'span',
           { class: 'choice__body' },
-          h('strong', {}, m.name),
-          h('span', {}, ok ? m.description : 'Není k dispozici: chybí klíč poskytovatele.'),
+          h('strong', {}, r.name),
+          h('span', {}, ok ? r.description : 'Není k dispozici: chybí klíč poskytovatele.'),
+        ),
+      );
+    });
+
+    const typeInputs = (Object.keys(GAME_TYPES) as GameType[]).map((id) => {
+      const t = GAME_TYPES[id];
+      return h(
+        'label',
+        { class: 'choice', 'data-type': id },
+        h('input', { type: 'radio', name: 'type', value: id, checked: prefs.type === id }),
+        h(
+          'span',
+          { class: 'choice__body' },
+          h('strong', {}, t.name),
+          h('span', {}, t.rules),
+          h('em', { class: 'choice__note', hidden: true }),
         ),
       );
     });
@@ -190,35 +340,103 @@ export class App {
         h('span', {}, formatLimit(sec)),
       ),
     );
+    const limitNote = h(
+      'p',
+      { class: 'field-note', hidden: true },
+      'V módu Countdown má každý tah pevně 30 sekund.',
+    );
+    const limitPills = h('div', { class: 'pills' }, ...limitInputs);
 
-    const anyConfigured = (Object.keys(MODES) as ModeId[]).some(configured);
+    const grayInput = h('input', { type: 'checkbox', name: 'grayscale', checked: prefs.grayscale });
+    const grayNote = h('span', { class: 'field-note' });
+    const grayLabel = h(
+      'label',
+      { class: 'check' },
+      grayInput,
+      h('span', {}, h('strong', {}, 'Černobílé panorama'), grayNote),
+    );
+
+    const errorEl = h('p', { class: 'form-error', role: 'alert', hidden: true });
+    const submit = h(
+      'button',
+      { class: 'btn btn--primary btn--big', type: 'submit', disabled: !anyConfigured },
+      'Hrát',
+    );
+
     const form = h(
       'form',
-      {
-        class: 'intro__form',
-        onsubmit: (e: Event) => {
-          e.preventDefault();
-          const data = new FormData(form);
-          const mode = data.get('mode') as ModeId | null;
-          const limit = Number(data.get('limit') ?? 0);
-          if (!mode || !configured(mode)) return;
-          savePrefs({ mode, timeLimitSec: limit });
-          this.newGame(mode, limit);
-        },
-      },
-      h('fieldset', {}, h('legend', {}, 'Kde budeš hrát'), ...modeInputs),
+      { class: 'intro__form', novalidate: true },
       h(
         'fieldset',
         {},
-        h('legend', {}, 'Čas na jedno kolo'),
-        h('div', { class: 'pills' }, ...limitInputs),
+        h('legend', {}, 'Kdo hraje'),
+        h('div', { class: 'pills' }, ...whoInputs),
+        playersBox,
       ),
-      h(
-        'button',
-        { class: 'btn btn--primary btn--big', type: 'submit', disabled: !anyConfigured },
-        'Hrát',
-      ),
+      h('fieldset', {}, h('legend', {}, 'Kde budeš hrát'), ...regionInputs),
+      h('fieldset', {}, h('legend', {}, 'Typ hry'), ...typeInputs),
+      h('fieldset', {}, h('legend', {}, 'Čas na jeden tah'), limitPills, limitNote),
+      h('fieldset', {}, h('legend', {}, 'Ztížení'), grayLabel),
+      errorEl,
+      submit,
     );
+
+    const sync = () => {
+      const data = new FormData(form);
+      prefs.multi = data.get('who') === 'multi';
+      prefs.region = (data.get('region') as RegionId | null) ?? prefs.region;
+      const region = REGIONS[prefs.region];
+      playersBox.hidden = !prefs.multi;
+      // Typ hry dostupný jen pro některé oblasti.
+      for (const label of form.querySelectorAll<HTMLLabelElement>('[data-type]')) {
+        const id = label.dataset['type'] as GameType;
+        const allowed = GAME_TYPES[id].regions.includes(prefs.region);
+        const input = label.querySelector('input') as HTMLInputElement;
+        input.disabled = !allowed;
+        label.classList.toggle('choice--disabled', !allowed);
+        const note = label.querySelector<HTMLElement>('.choice__note');
+        if (note) {
+          note.hidden = allowed;
+          note.textContent = allowed ? '' : 'Jen v oblasti Svět.';
+        }
+        if (!allowed && input.checked) {
+          input.checked = false;
+          (form.querySelector('input[name="type"][value="classic"]') as HTMLInputElement).checked =
+            true;
+        }
+      }
+      prefs.type = (new FormData(form).get('type') as GameType | null) ?? 'classic';
+      const fixed = GAME_TYPES[prefs.type].fixedTimeSec;
+      limitPills.hidden = !!fixed;
+      limitNote.hidden = !fixed;
+      prefs.timeLimitSec = Number(data.get('limit') ?? 0);
+      grayInput.disabled = !region.grayscaleAllowed;
+      if (!region.grayscaleAllowed) grayInput.checked = false;
+      grayNote.textContent = region.grayscaleAllowed
+        ? 'Bez barev se místo hádá hůř. Snímek se jen zobrazí černobíle.'
+        : 'U panoramat Mapy.com není úprava obrazu podle podmínek ověřená, proto ji nenabízíme.';
+      prefs.grayscale = grayInput.checked;
+    };
+    form.addEventListener('change', sync);
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      sync();
+      if (!configured(prefs.region)) return;
+      const settings: GameSettings = {
+        region: prefs.region,
+        type: prefs.type,
+        grayscale: prefs.grayscale,
+        timeLimitSec: prefs.timeLimitSec,
+        players: prefs.multi ? prefs.players.map((p) => p.trim()) : ['Ty'],
+      };
+      const err = validateSettings(settings);
+      errorEl.hidden = !err;
+      errorEl.textContent = err ?? '';
+      if (err) return;
+      savePrefs(prefs);
+      this.newGame(settings);
+    });
 
     const screen = h(
       'main',
@@ -231,7 +449,7 @@ export class App {
         h(
           'p',
           { class: 'lead' },
-          'Rozhlédni se po panoramatu a na mapě označ, kde podle tebe jsi. Čím blíž, tím víc bodů, za kolo až 5 000.',
+          'Rozhlédni se po panoramatu a na mapě označ, kde podle tebe jsi. Hra má 5 kol, za každé až 5 000 bodů.',
         ),
       ),
       resumable &&
@@ -241,7 +459,7 @@ export class App {
           h(
             'p',
             {},
-            `Máš rozehranou hru (${MODES[resumable.mode].name}, kolo ${Math.max(1, resumable.rounds.length)} z ${ROUNDS_PER_GAME}).`,
+            `Máš rozehranou hru (${REGIONS[resumable.settings.region].name}, ${GAME_TYPES[resumable.settings.type].name}, kolo ${Math.max(1, resumable.rounds.length)} z ${ROUNDS_PER_GAME}).`,
           ),
           h(
             'button',
@@ -250,7 +468,9 @@ export class App {
               type: 'button',
               onclick: () => {
                 this.setState(expireIfNeeded(resumable, Date.now()));
-                this.route();
+                if (isMultiplayer(resumable) && this.state?.phase === 'playing')
+                  this.renderHandoff(true);
+                else this.route();
               },
             },
             'Pokračovat',
@@ -271,15 +491,16 @@ export class App {
       h(
         'footer',
         { class: 'intro__foot' },
-        'Panoramata: Mapillary (CC BY-SA) a Mapy.com. Mapa: OpenFreeMap, © přispěvatelé OpenStreetMap.',
+        'Panoramata: Mapillary (CC BY-SA) a Mapy.com. Mapa: OpenFreeMap, © přispěvatelé OpenStreetMap. Hranice států: Natural Earth.',
       ),
     );
     this.mount(screen);
+    sync();
   }
 
-  private newGame(mode: ModeId, timeLimitSec: number): void {
+  private newGame(settings: GameSettings): void {
     this.placeNames.clear();
-    this.setState(createGame(mode, timeLimitSec, Date.now(), newId()));
+    this.setState(createGame(settings, Date.now(), newId()));
     this.route();
   }
 
@@ -288,6 +509,22 @@ export class App {
   }
 
   // ---------- načítání kola ----------
+
+  /** Najde panorama; v módu Země jen takové, které leží v některém státě. */
+  private async findTarget(signal: AbortSignal): Promise<Target> {
+    const settings = this.state?.settings;
+    if (settings?.type !== 'country') return this.provider().findRandom(this.region(), signal);
+    const countries = await loadCountries();
+    for (let i = 0; i < COUNTRY_RETRIES; i++) {
+      const t = await this.provider().findRandom(this.region(), signal);
+      const f = countries.countryAt(t.position);
+      if (f) return { ...t, country: f.properties.code };
+    }
+    throw new ProviderError(
+      'Nepodařilo se najít panorama v žádném státě. Zkus to znovu.',
+      'not-found',
+    );
+  }
 
   private async loadRound(): Promise<void> {
     const state = this.state;
@@ -306,7 +543,7 @@ export class App {
     const ctrl = new AbortController();
     this.abort = ctrl;
     try {
-      const target = await this.provider().findRandom(this.mode(), ctrl.signal);
+      const target = await this.findTarget(ctrl.signal);
       if (ctrl.signal.aborted || this.state !== state) return;
       this.setState(startRound(state, target, Date.now()));
       this.route();
@@ -326,14 +563,83 @@ export class App {
     }
   }
 
+  // ---------- předávací obrazovka ----------
+
+  private renderHandoff(resume: boolean): void {
+    const state = this.state;
+    if (!state) return this.renderIntro();
+    const name = state.settings.players[state.current] ?? '';
+    const startBtn = h(
+      'button',
+      {
+        class: 'btn btn--primary btn--big',
+        type: 'button',
+        onclick: () => {
+          const s = this.state;
+          if (!s) return;
+          if (s.phase === 'handoff') this.setState(beginTurn(s, Date.now()));
+          else this.setState(expireIfNeeded(s, Date.now()));
+          this.route();
+        },
+      },
+      resume ? `Jsem ${name}, pokračovat` : `Jsem ${name}, začít`,
+    );
+    const screen = h(
+      'main',
+      { class: 'screen center handoff' },
+      h('p', { class: 'handoff__round' }, `Kolo ${state.rounds.length} z ${ROUNDS_PER_GAME}`),
+      h(
+        'span',
+        {
+          class: 'avatar',
+          style: `background:${playerColor(state.current)}`,
+          'aria-hidden': 'true',
+        },
+        name.slice(0, 1).toUpperCase(),
+      ),
+      h('h2', { tabindex: -1 }, `Na tahu je ${name}`),
+      h(
+        'p',
+        { class: 'status' },
+        resume
+          ? 'Tah už běží a čas se počítá dál. Předej zařízení hráči, který je na tahu.'
+          : 'Předej mu zařízení. Ostatní se teď nedívejte, ať je hra férová.',
+      ),
+      turnLimitSec(state.settings) > 0 &&
+        h(
+          'p',
+          { class: 'field-note' },
+          `Čas na tah: ${formatLimit(turnLimitSec(state.settings))}. Začne běžet po stisku tlačítka.`,
+        ),
+      startBtn,
+      h(
+        'button',
+        { class: 'btn btn--ghost', type: 'button', onclick: () => this.quitToIntro() },
+        'Odejít (hra zůstane uložená)',
+      ),
+    );
+    this.mount(screen, startBtn);
+  }
+
   // ---------- hra ----------
 
   private renderGame(): void {
     const state = this.state;
     const round = state && currentRound(state);
-    if (!state || !round) return this.renderIntro();
+    const turn = state && currentTurn(state);
+    if (!state || !round || !turn) return this.renderIntro();
+    const settings = state.settings;
+    const multi = isMultiplayer(state);
+    const countryMode = settings.type === 'country';
+    const color = playerColor(state.current);
+    const limitSec = turnLimitSec(settings);
+    const region = this.region();
 
-    const panoEl = h('div', { class: 'pano', 'aria-label': 'Panorama místa', role: 'region' });
+    const panoEl = h('div', {
+      class: `pano${settings.grayscale ? ' pano--gray' : ''}`,
+      'aria-label': 'Panorama místa',
+      role: 'region',
+    });
     const panoOverlay = h(
       'div',
       { class: 'pano__overlay', role: 'status' },
@@ -349,10 +655,12 @@ export class App {
     const mapEl = h('div', {
       class: 'guessmap',
       role: 'application',
-      'aria-label': 'Mapa pro tip. Klepni na místo, kde si myslíš, že jsi.',
+      'aria-label': countryMode
+        ? 'Mapa pro tip. Klepni na stát, ve kterém si myslíš, že jsi.'
+        : 'Mapa pro tip. Klepni na místo, kde si myslíš, že jsi.',
     });
     const mapMsg = h('p', { class: 'mapmsg', role: 'alert', hidden: true });
-    const hint = h('p', { class: 'maphint' }, 'Klepni do mapy a umísti špendlík.');
+    const hint = h('p', { class: 'maphint', 'aria-live': 'polite' });
 
     const panel = h(
       'section',
@@ -386,9 +694,17 @@ export class App {
       h(
         'div',
         { class: 'hud__info' },
+        multi &&
+          h(
+            'span',
+            { class: 'hud__player', style: `box-shadow: inset 4px 0 0 ${color}` },
+            settings.players[state.current] ?? '',
+          ),
         h('span', {}, h('small', {}, 'Kolo '), `${state.rounds.length}/${ROUNDS_PER_GAME}`),
-        h('span', {}, h('small', {}, 'Body '), formatPoints(totalPoints(state))),
-        state.timeLimitSec > 0 && timerEl,
+        h('span', {}, h('small', {}, 'Body '), formatPoints(playerTotal(state, state.current))),
+        limitSec > 0 && timerEl,
+        settings.grayscale &&
+          h('span', { title: 'Snímek je upravený: zobrazený černobíle' }, 'Černobíle'),
       ),
       h(
         'div',
@@ -419,7 +735,11 @@ export class App {
     const screen = h(
       'main',
       { class: 'game' },
-      h('h2', { class: 'sr-only', tabindex: -1 }, `Kolo ${state.rounds.length}`),
+      h(
+        'h2',
+        { class: 'sr-only', tabindex: -1 },
+        `Kolo ${state.rounds.length}${multi ? `, hraje ${settings.players[state.current]}` : ''}`,
+      ),
       h('div', { class: 'game__pano' }, panoEl, panoOverlay, hud, openBtn),
       panel,
     );
@@ -427,6 +747,12 @@ export class App {
 
     // --- rozbalovací mapa ---
     let guessMap: GuessMap | null = null;
+    let countryMap: CountryMap | null = null;
+    let countries: CountryIndex | null = null;
+    const resizeMaps = () => {
+      guessMap?.resize();
+      countryMap?.resize();
+    };
     const setPanel = (s: 'closed' | 'open' | 'full') => {
       panel.dataset['state'] = s;
       openBtn.setAttribute('aria-expanded', String(s !== 'closed'));
@@ -435,7 +761,7 @@ export class App {
         sizeBtn.textContent = s === 'full' ? 'Zmenšit' : 'Zvětšit';
         sizeBtn.setAttribute('aria-label', s === 'full' ? 'Zmenšit mapu' : 'Zvětšit mapu');
       }
-      requestAnimationFrame(() => guessMap?.resize());
+      requestAnimationFrame(resizeMaps);
     };
     openBtn.addEventListener('click', () => {
       setPanel('open');
@@ -456,25 +782,46 @@ export class App {
     document.addEventListener('keydown', onKey);
     this.cleanups.push(() => document.removeEventListener('keydown', onKey));
 
+    let seaClick = false;
     const refreshConfirm = () => {
-      const r = this.state && currentRound(this.state);
-      confirmBtn.disabled = !r?.pin;
-      hint.textContent = r?.pin
-        ? 'Špendlík můžeš ještě přesunout.'
-        : 'Klepni do mapy a umísti špendlík.';
+      const pending = this.state && currentTurn(this.state)?.pending;
+      confirmBtn.disabled = !pending;
+      if (countryMode) {
+        if (seaClick) hint.textContent = 'Tady žádný stát není. Klepni na pevninu.';
+        else if (pending?.kind === 'country')
+          hint.textContent = `Vybráno: ${countries?.nameOf(pending.code) ?? pending.code}`;
+        else hint.textContent = 'Klepni do mapy na stát.';
+      } else {
+        hint.textContent = pending
+          ? 'Špendlík můžeš ještě přesunout.'
+          : 'Klepni do mapy a umísti špendlík.';
+      }
     };
 
     const afterChange = (prev: GameState) => {
-      if (this.state && this.state.phase !== prev.phase) this.route();
+      if (this.state && (this.state.phase !== prev.phase || this.state.current !== prev.current))
+        this.route();
       else refreshConfirm();
     };
 
-    const onPin = (p: LatLng) => {
+    const apply = (guess: Guess) => {
       const prev = this.state;
       if (!prev) return;
-      this.setState(placePin(prev, p, Date.now()));
-      guessMap?.setPin(this.state && currentRound(this.state)?.pin ? p : null);
+      this.setState(placeGuess(prev, guess, Date.now()));
       afterChange(prev);
+    };
+
+    const onPin = (p: LatLng) => {
+      apply({ kind: 'point', point: p });
+      const pending = this.state && currentTurn(this.state)?.pending;
+      guessMap?.setPin(pending?.kind === 'point' ? pending.point : null);
+    };
+    const onCountry = (code: string | null) => {
+      seaClick = code === null;
+      if (code) apply({ kind: 'country', code });
+      else refreshConfirm();
+      const pending = this.state && currentTurn(this.state)?.pending;
+      countryMap?.select(pending?.kind === 'country' ? pending.code : null);
     };
 
     confirmBtn.addEventListener('click', () => {
@@ -489,23 +836,48 @@ export class App {
     this.cleanups.push(() => {
       destroyed = true;
       guessMap?.destroy();
+      countryMap?.destroy();
     });
-    void createGuessMap(mapEl, this.mode().viewBBox, round.pin, onPin, () => {
+    const mapFailed = () => {
       mapMsg.hidden = false;
       mapMsg.textContent = 'Mapu se nepodařilo načíst. Zkontroluj připojení a obnov stránku.';
-    }).then(
-      (gm) => {
+    };
+    const pending = turn.pending;
+    if (countryMode) {
+      void loadCountries()
+        .then((idx) => {
+          countries = idx;
+          refreshConfirm();
+          return createCountryMap(
+            mapEl,
+            region.viewBBox,
+            idx,
+            pending?.kind === 'country' ? pending.code : null,
+            color,
+            onCountry,
+            mapFailed,
+          );
+        })
+        .then((cm) => {
+          if (destroyed) return cm.destroy();
+          countryMap = cm;
+        }, mapFailed);
+    } else {
+      void createGuessMap(
+        mapEl,
+        region.viewBBox,
+        pending?.kind === 'point' ? pending.point : null,
+        color,
+        onPin,
+        mapFailed,
+      ).then((gm) => {
         if (destroyed) return gm.destroy();
         guessMap = gm;
-      },
-      () => {
-        mapMsg.hidden = false;
-        mapMsg.textContent = 'Mapu se nepodařilo načíst. Zkontroluj připojení a obnov stránku.';
-      },
-    );
+      }, mapFailed);
+    }
     refreshConfirm();
 
-    // --- panorama ---
+    // --- panorama (každý tah začíná na výchozím místě a výhledu) ---
     let viewer: PanoramaViewer | null = null;
     const showPano = async () => {
       panoOverlay.hidden = false;
@@ -527,6 +899,9 @@ export class App {
               ? e.message
               : 'Panorama se nepodařilo načíst.',
           ),
+          multi
+            ? h('p', { class: 'field-note' }, 'Jiné místo začne kolo znovu pro všechny hráče.')
+            : '',
           h(
             'div',
             { class: 'actions' },
@@ -549,10 +924,10 @@ export class App {
       try {
         const ctrl = new AbortController();
         this.abort = ctrl;
-        const target = await this.provider().findRandom(this.mode(), ctrl.signal);
+        const target = await this.findTarget(ctrl.signal);
         if (destroyed || !this.state) return;
         this.setState(replaceTarget(this.state, target, Date.now()));
-        this.renderGame();
+        this.route();
       } catch (e) {
         if (destroyed) return;
         panoOverlay.replaceChildren(
@@ -575,19 +950,20 @@ export class App {
     // --- velikost (otočení, složení a rozložení Foldu) ---
     const ro = new ResizeObserver(() => {
       viewer?.resize();
-      guessMap?.resize();
+      resizeMaps();
     });
     ro.observe(screen);
     this.cleanups.push(() => ro.disconnect());
 
     // --- časomíra ---
-    if (state.timeLimitSec > 0) {
+    if (limitSec > 0) {
       const tick = () => {
         const s = this.state;
         if (!s) return;
         const rest = remainingMs(s, Date.now());
         if (rest === null) return;
-        timerEl.textContent = `⏱ ${formatClock(rest)}`;
+        const mult = settings.type === 'countdown' ? ` · ×${pct(rest / 1000 / limitSec)}` : '';
+        timerEl.textContent = `⏱ ${formatClock(rest)}${mult}`;
         timerEl.classList.toggle('hud__timer--low', rest <= 10_000);
         if (rest <= 0) {
           const prev = s;
@@ -618,35 +994,156 @@ export class App {
     return el;
   }
 
+  /** Popis tipu jednoho hráče pro tabulku a přehled. */
+  private guessText(r: TurnResult | null, countries: CountryIndex | null): string {
+    if (!r?.guess) return 'bez tipu';
+    if (r.guess.kind === 'country') return countries?.nameOf(r.guess.code) ?? r.guess.code;
+    return formatDistance(r.distanceKm ?? 0);
+  }
+
+  private pointsText(r: TurnResult | null, countdown: boolean): string {
+    if (!r) return '0';
+    if (countdown && r.guess && !r.timedOut) {
+      return `${formatPoints(r.points)} (${formatPoints(r.basePoints)} × ${pct(r.multiplier)})`;
+    }
+    return formatPoints(r.points);
+  }
+
   private renderResult(): void {
     const state = this.state;
     const round = state && currentRound(state);
-    const result = round?.result;
-    if (!state || !round || !result) return this.renderIntro();
+    if (!state || !round) return this.renderIntro();
+    void (state.settings.type === 'country' ? loadCountries() : Promise.resolve(null)).then((c) =>
+      this.renderResultWith(c),
+    );
+  }
+
+  private renderResultWith(countries: CountryIndex | null): void {
+    const state = this.state;
+    const round = state && currentRound(state);
+    if (!state || !round || state.phase !== 'result') return;
+    const settings = state.settings;
+    const multi = isMultiplayer(state);
+    const countryMode = settings.type === 'country';
+    const countdown = settings.type === 'countdown';
     const last = state.rounds.length >= ROUNDS_PER_GAME;
+    const targetCountry = round.target.country;
 
     const mapEl = h('div', {
       class: 'resultmap',
       role: 'img',
-      'aria-label': 'Mapa s cílem a tvým tipem',
+      'aria-label': 'Mapa s cílem a tipy',
     });
-    const verdict = result.guess
-      ? h(
-          'dl',
-          { class: 'stats' },
+
+    let body: HTMLElement;
+    if (!multi) {
+      const r = round.turns[0]?.result ?? null;
+      const timeoutNote =
+        r?.timedOut && r.guess
+          ? h(
+              'p',
+              { class: 'note' },
+              countdown
+                ? 'Čas vypršel. Tip se vyhodnotil, ale časový násobitel je 0.'
+                : 'Čas vypršel, počítá se poslední tip.',
+            )
+          : null;
+      if (!r?.guess) {
+        body = h(
+          'div',
+          {},
           h(
-            'div',
-            {},
-            h('dt', {}, 'Vzdálenost'),
-            h('dd', {}, formatDistance(result.distanceKm ?? 0)),
+            'p',
+            { class: 'stats stats--none' },
+            'Čas vypršel a netipoval jsi. Tohle kolo je za 0 bodů.',
           ),
-          h('div', {}, h('dt', {}, 'Body'), h('dd', {}, formatPoints(result.points))),
-        )
-      : h(
-          'p',
-          { class: 'stats stats--none' },
-          'Čas vypršel a netipoval jsi. Tohle kolo je za 0 bodů.',
         );
+      } else if (countryMode) {
+        body = h(
+          'div',
+          {},
+          timeoutNote,
+          h(
+            'dl',
+            { class: 'stats' },
+            h(
+              'div',
+              {},
+              h('dt', {}, 'Tvůj stát'),
+              h('dd', { class: 'dd--text' }, this.guessText(r, countries)),
+            ),
+            h(
+              'div',
+              {},
+              h('dt', {}, 'Správně'),
+              h('dd', { class: 'dd--text' }, countries?.nameOf(targetCountry ?? '') ?? ''),
+            ),
+          ),
+          h(
+            'p',
+            { class: `verdict ${r.points > 0 ? 'verdict--ok' : 'verdict--bad'}` },
+            r.points > 0 ? `Správně! ${formatPoints(r.points)} bodů` : 'Vedle. 0 bodů',
+          ),
+        );
+      } else {
+        body = h(
+          'div',
+          {},
+          timeoutNote,
+          h(
+            'dl',
+            { class: 'stats' },
+            h('div', {}, h('dt', {}, 'Vzdálenost'), h('dd', {}, formatDistance(r.distanceKm ?? 0))),
+            h('div', {}, h('dt', {}, 'Body'), h('dd', {}, formatPoints(r.points))),
+          ),
+          countdown &&
+            !r.timedOut &&
+            h(
+              'p',
+              { class: 'field-note' },
+              `${formatPoints(r.basePoints)} bodů za vzdálenost × ${pct(r.multiplier)} za čas`,
+            ),
+        );
+      }
+    } else {
+      body = h(
+        'table',
+        { class: 'rounds' },
+        h('caption', { class: 'sr-only' }, 'Výsledky hráčů v tomto kole'),
+        h(
+          'thead',
+          {},
+          h(
+            'tr',
+            {},
+            h('th', { scope: 'col' }, 'Hráč'),
+            h('th', { scope: 'col' }, countryMode ? 'Tip' : 'Vzdálenost'),
+            h('th', { scope: 'col', class: 'num' }, 'Kolo'),
+            h('th', { scope: 'col', class: 'num' }, 'Celkem'),
+          ),
+        ),
+        h(
+          'tbody',
+          {},
+          ...settings.players.map((name, i) => {
+            const r = round.turns[i]?.result ?? null;
+            return h(
+              'tr',
+              {},
+              h(
+                'th',
+                { scope: 'row' },
+                h('span', { class: 'dot', style: `background:${playerColor(i)}` }),
+                ` ${name}`,
+              ),
+              h('td', {}, this.guessText(r, countries), r?.timedOut ? ' (čas)' : ''),
+              h('td', { class: 'num' }, this.pointsText(r, countdown)),
+              h('td', { class: 'num' }, formatPoints(playerTotal(state, i))),
+            );
+          }),
+        ),
+      );
+    }
 
     const nextBtn = h(
       'button',
@@ -669,45 +1166,62 @@ export class App {
         'section',
         { class: 'result__panel' },
         h('h2', { tabindex: -1 }, `Kolo ${state.rounds.length} z ${ROUNDS_PER_GAME}`),
-        result.timedOut &&
-          result.guess &&
-          h('p', { class: 'note' }, 'Čas vypršel, počítá se poslední poloha špendlíku.'),
-        verdict,
+        body,
+        countryMode &&
+          multi &&
+          h(
+            'p',
+            { class: 'place' },
+            h('small', {}, 'Správný stát: '),
+            countries?.nameOf(targetCountry ?? '') ?? '',
+          ),
         h('p', { class: 'place' }, h('small', {}, 'Místo: '), this.placeNameEl(round)),
         h(
           'p',
           { class: 'legend' },
-          h('span', { class: 'dot dot--target' }),
+          h('span', { class: 'dot', style: `background:${TARGET_COLOR}` }),
           'cíl',
-          result.guess && h('span', { class: 'dot dot--guess' }),
-          result.guess && 'tvůj tip',
+          !multi &&
+            round.turns[0]?.result?.guess &&
+            h('span', { class: 'dot dot--gap', style: `background:${playerColor(0)}` }),
+          !multi && round.turns[0]?.result?.guess && 'tvůj tip',
         ),
-        h('p', { class: 'total' }, `Celkem ${formatPoints(totalPoints(state))} bodů`),
+        !multi && h('p', { class: 'total' }, `Celkem ${formatPoints(playerTotal(state, 0))} bodů`),
         nextBtn,
       ),
     );
     this.mount(screen, nextBtn);
 
-    let destroyed = false;
-    let map: { resize(): void; destroy(): void } | null = null;
-    this.cleanups.push(() => {
-      destroyed = true;
-      map?.destroy();
+    const entries = settings.players.map((name, i) => {
+      const g = round.turns[i]?.result?.guess;
+      return {
+        guess: g?.kind === 'point' ? g.point : null,
+        target: round.target.position,
+        color: playerColor(i),
+        label: name,
+      };
     });
-    void createResultMap(
-      mapEl,
-      [{ guess: result.guess, target: round.target.position }],
-      this.mode().viewBBox,
-      () => {
-        mapEl.append(h('p', { class: 'mapmsg', role: 'alert' }, 'Mapu se nepodařilo načíst.'));
-      },
-    ).then((m) => {
-      if (destroyed) m.destroy();
-      else map = m;
-    });
-    const ro = new ResizeObserver(() => map?.resize());
-    ro.observe(mapEl);
-    this.cleanups.push(() => ro.disconnect());
+    const highlights = countryMode
+      ? [
+          ...settings.players.flatMap((_, i) => {
+            const g = round.turns[i]?.result?.guess;
+            return g?.kind === 'country' && g.code !== targetCountry
+              ? [{ code: g.code, color: playerColor(i) }]
+              : [];
+          }),
+          ...(targetCountry ? [{ code: targetCountry, color: TARGET_COLOR }] : []),
+        ]
+      : [];
+    this.mountResultMap(mapEl, () =>
+      createResultMap(
+        mapEl,
+        entries,
+        this.region().viewBBox,
+        () =>
+          mapEl.append(h('p', { class: 'mapmsg', role: 'alert' }, 'Mapu se nepodařilo načíst.')),
+        countries ? { index: countries, highlights } : undefined,
+      ),
+    );
   }
 
   // ---------- konec hry ----------
@@ -715,100 +1229,160 @@ export class App {
   private renderFinal(): void {
     const state = this.state;
     if (!state) return this.renderIntro();
-    const total = totalPoints(state);
+    const settings = state.settings;
+    const multi = isMultiplayer(state);
     const max = MAX_POINTS * ROUNDS_PER_GAME;
-
-    const rows = state.rounds.map((r, i) =>
-      h(
-        'tr',
-        {},
-        h('th', { scope: 'row' }, String(i + 1)),
-        h('td', {}, this.placeNameEl(r)),
-        h('td', {}, r.result?.guess ? formatDistance(r.result.distanceKm ?? 0) : 'bez tipu'),
-        h('td', { class: 'num' }, formatPoints(r.result?.points ?? 0)),
-      ),
-    );
-    const mapEl = h('div', { class: 'resultmap', role: 'img', 'aria-label': 'Mapa všech kol' });
-
-    const screen = h(
-      'main',
-      { class: 'screen result final' },
-      h('div', { class: 'result__map' }, mapEl),
-      h(
-        'section',
-        { class: 'result__panel' },
-        h('h2', { tabindex: -1 }, 'Konec hry'),
-        h(
-          'p',
-          { class: 'bigscore' },
-          h('strong', {}, formatPoints(total)),
-          ` z ${formatPoints(max)} bodů`,
-        ),
-        h(
-          'table',
-          { class: 'rounds' },
-          h('caption', { class: 'sr-only' }, 'Přehled kol'),
-          h(
-            'thead',
+    void (settings.type === 'country' ? loadCountries() : Promise.resolve(null)).then(
+      (countries) => {
+        if (this.state !== state) return;
+        let summary: HTMLElement;
+        if (multi) {
+          const st = standings(state);
+          const top = st.filter((s) => s.rank === 1);
+          summary = h(
+            'div',
             {},
             h(
-              'tr',
-              {},
-              h('th', { scope: 'col' }, 'Kolo'),
-              h('th', { scope: 'col' }, 'Místo'),
-              h('th', { scope: 'col' }, 'Vzdálenost'),
-              h('th', { scope: 'col', class: 'num' }, 'Body'),
+              'p',
+              { class: 'bigscore' },
+              top.length > 1
+                ? `Remíza: ${top.map((t) => t.name).join(', ')}`
+                : `Vyhrává ${top[0]?.name ?? ''}`,
+            ),
+            h(
+              'table',
+              { class: 'rounds standings' },
+              h('caption', { class: 'sr-only' }, 'Pořadí hráčů'),
+              h(
+                'thead',
+                {},
+                h(
+                  'tr',
+                  {},
+                  h('th', { scope: 'col' }, 'Pořadí'),
+                  h('th', { scope: 'col' }, 'Hráč'),
+                  h('th', { scope: 'col', class: 'num' }, 'Body'),
+                ),
+              ),
+              h(
+                'tbody',
+                {},
+                ...st.map((s) =>
+                  h(
+                    'tr',
+                    {},
+                    h('td', {}, `${s.rank}.`),
+                    h(
+                      'th',
+                      { scope: 'row' },
+                      h('span', { class: 'dot', style: `background:${playerColor(s.player)}` }),
+                      ` ${s.name}`,
+                    ),
+                    h('td', { class: 'num' }, `${formatPoints(s.points)} / ${formatPoints(max)}`),
+                  ),
+                ),
+              ),
+            ),
+          );
+        } else {
+          summary = h(
+            'div',
+            {},
+            h(
+              'p',
+              { class: 'bigscore' },
+              h('strong', {}, formatPoints(playerTotal(state, 0))),
+              ` z ${formatPoints(max)} bodů`,
+            ),
+            h(
+              'table',
+              { class: 'rounds' },
+              h('caption', { class: 'sr-only' }, 'Přehled kol'),
+              h(
+                'thead',
+                {},
+                h(
+                  'tr',
+                  {},
+                  h('th', { scope: 'col' }, 'Kolo'),
+                  h('th', { scope: 'col' }, 'Místo'),
+                  h('th', { scope: 'col' }, settings.type === 'country' ? 'Tip' : 'Vzdálenost'),
+                  h('th', { scope: 'col', class: 'num' }, 'Body'),
+                ),
+              ),
+              h(
+                'tbody',
+                {},
+                ...state.rounds.map((r, i) =>
+                  h(
+                    'tr',
+                    {},
+                    h('th', { scope: 'row' }, String(i + 1)),
+                    h('td', {}, this.placeNameEl(r)),
+                    h('td', {}, this.guessText(r.turns[0]?.result ?? null, countries)),
+                    h('td', { class: 'num' }, formatPoints(r.turns[0]?.result?.points ?? 0)),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+
+        const mapEl = h('div', { class: 'resultmap', role: 'img', 'aria-label': 'Mapa všech kol' });
+        const screen = h(
+          'main',
+          { class: 'screen result final' },
+          h('div', { class: 'result__map' }, mapEl),
+          h(
+            'section',
+            { class: 'result__panel' },
+            h('h2', { tabindex: -1 }, 'Konec hry'),
+            summary,
+            h(
+              'div',
+              { class: 'actions' },
+              h(
+                'button',
+                {
+                  class: 'btn btn--primary',
+                  type: 'button',
+                  onclick: () => this.newGame(settings),
+                },
+                'Nová hra',
+              ),
+              h(
+                'button',
+                {
+                  class: 'btn',
+                  type: 'button',
+                  onclick: () => {
+                    clearGame();
+                    this.state = null;
+                    this.renderIntro();
+                  },
+                },
+                'Na úvod',
+              ),
             ),
           ),
-          h('tbody', {}, ...rows),
-        ),
-        h(
-          'div',
-          { class: 'actions' },
-          h(
-            'button',
-            {
-              class: 'btn btn--primary',
-              type: 'button',
-              onclick: () => this.newGame(state.mode, state.timeLimitSec),
-            },
-            'Nová hra',
+        );
+        this.mount(screen);
+        const entries = state.rounds.flatMap((r) =>
+          settings.players.map((_, i) => {
+            const g = r.turns[i]?.result?.guess;
+            return {
+              guess: g?.kind === 'point' ? g.point : null,
+              target: r.target.position,
+              color: playerColor(i),
+            };
+          }),
+        );
+        this.mountResultMap(mapEl, () =>
+          createResultMap(mapEl, entries, this.region().viewBBox, () =>
+            mapEl.append(h('p', { class: 'mapmsg', role: 'alert' }, 'Mapu se nepodařilo načíst.')),
           ),
-          h(
-            'button',
-            {
-              class: 'btn',
-              type: 'button',
-              onclick: () => {
-                clearGame();
-                this.state = null;
-                this.renderIntro();
-              },
-            },
-            'Na úvod',
-          ),
-        ),
-      ),
+        );
+      },
     );
-    this.mount(screen);
-
-    let destroyed = false;
-    let map: { resize(): void; destroy(): void } | null = null;
-    this.cleanups.push(() => {
-      destroyed = true;
-      map?.destroy();
-    });
-    void createResultMap(
-      mapEl,
-      state.rounds.map((r) => ({ guess: r.result?.guess ?? null, target: r.target.position })),
-      this.mode().viewBBox,
-      () => mapEl.append(h('p', { class: 'mapmsg', role: 'alert' }, 'Mapu se nepodařilo načíst.')),
-    ).then((m) => {
-      if (destroyed) m.destroy();
-      else map = m;
-    });
-    const ro = new ResizeObserver(() => map?.resize());
-    ro.observe(mapEl);
-    this.cleanups.push(() => ro.disconnect());
   }
 }

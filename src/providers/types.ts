@@ -1,5 +1,5 @@
 import type { Target } from '../core/game';
-import type { ModeDef } from '../core/modes';
+import type { RegionDef } from '../core/modes';
 
 export class ProviderError extends Error {
   constructor(
@@ -25,8 +25,8 @@ export interface PanoramaProvider {
   readonly attribution: { label: string; url: string };
   /** Je nastavený klíč? Bez něj se knihovna poskytovatele vůbec nenačítá. */
   isConfigured(): boolean;
-  /** Najde náhodné panorama v oblasti módu. */
-  findRandom(mode: ModeDef, signal: AbortSignal): Promise<Target>;
+  /** Najde náhodné panorama v oblasti. */
+  findRandom(region: RegionDef, signal: AbortSignal): Promise<Target>;
   /** Zobrazí panorama v kontejneru. Při chybě vyhodí ProviderError. */
   createViewer(container: HTMLElement, target: Target): Promise<PanoramaViewer>;
 }

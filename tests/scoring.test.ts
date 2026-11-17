@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { bboxDiagonalKm, formatDistance, haversineKm, isValidLatLng } from '../src/core/geo';
-import { CZ_BBOX, MODES } from '../src/core/modes';
+import { CZSK_BBOX, CZ_BBOX, REGIONS } from '../src/core/modes';
 import { MAX_POINTS, WORLD_SCALE_KM, scaleForBBox, scoreForDistance } from '../src/core/scoring';
 
 describe('haversineKm', () => {
@@ -63,13 +63,21 @@ describe('škála pro menší mapy', () => {
     expect(bboxDiagonalKm(CZ_BBOX)).toBeLessThan(580);
     expect(scaleForBBox(CZ_BBOX)).toBeGreaterThan(40);
     expect(scaleForBBox(CZ_BBOX)).toBeLessThan(44);
-    expect(MODES.cz.scaleKm).toBe(scaleForBBox(CZ_BBOX));
+    expect(REGIONS.cz.scaleKm).toBe(scaleForBBox(CZ_BBOX));
+  });
+
+  it('Česko + Slovensko má úhlopříčku ~ 850 km a škálu ~ 64 km', () => {
+    expect(bboxDiagonalKm(CZSK_BBOX)).toBeGreaterThan(820);
+    expect(bboxDiagonalKm(CZSK_BBOX)).toBeLessThan(880);
+    expect(REGIONS.czsk.scaleKm).toBeGreaterThan(60);
+    expect(REGIONS.czsk.scaleKm).toBeLessThan(68);
+    expect(REGIONS.czsk.scaleKm).toBeLessThan(REGIONS.world.scaleKm);
   });
 
   it('je přísnější než světová', () => {
-    expect(MODES.cz.scaleKm).toBeLessThan(MODES.world.scaleKm);
-    expect(scoreForDistance(100, MODES.cz.scaleKm)).toBeLessThan(
-      scoreForDistance(100, MODES.world.scaleKm),
+    expect(REGIONS.cz.scaleKm).toBeLessThan(REGIONS.world.scaleKm);
+    expect(scoreForDistance(100, REGIONS.cz.scaleKm)).toBeLessThan(
+      scoreForDistance(100, REGIONS.world.scaleKm),
     );
   });
 });
