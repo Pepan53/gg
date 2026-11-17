@@ -340,7 +340,9 @@ legend {
   min-width: 0;
   min-height: 0;
 }
-.pano {
+/* Knihovny panoramat přidávají kontejneru vlastní position: relative, proto vyšší specifičnost. */
+.pano,
+.game__pano > .pano {
   position: absolute;
   inset: 0;
 }
