@@ -1,4 +1,131 @@
 {
   "version": 1,
-  "places": []
+  "places": [
+    {
+      "id": "tabor-zizkovo-namesti",
+      "title": "Tábor, Žižkovo náměstí",
+      "provider": "mapy",
+      "position": {
+        "lat": 49.413699,
+        "lng": 14.658601
+      },
+      "view": {
+        "yaw": 0,
+        "pitch": 0,
+        "fov": 1.2
+      },
+      "hints": [
+        "Nad náměstím se tyčí štíhlá věž s hodinami a zelenou cibulovitou bání.",
+        "Kostel má červenou střechu a bílé ozdobné štíty, před ním je dlážděné náměstí.",
+        "Domy kolem náměstí mají podloubí s klenutými oblouky."
+      ],
+      "status": "draft",
+      "note": "Panorama Mapy.com 7 m od zadaného bodu. Výhled z podloubí na kostel."
+    },
+    {
+      "id": "ceske-budejovice-namesti",
+      "title": "České Budějovice, náměstí Přemysla Otakara II.",
+      "provider": "mapy",
+      "position": {
+        "lat": 48.974427,
+        "lng": 14.474214
+      },
+      "view": {
+        "yaw": 0,
+        "pitch": 0,
+        "fov": 1.2
+      },
+      "hints": [
+        "Uprostřed velkého dlážděného náměstí stojí kamenná kašna se sochou na vrcholu, obehnaná řetězy.",
+        "Vpravo za kašnou se zvedá vysoká hranolová věž s ochozem.",
+        "Náměstí lemuje dlouhá řada měšťanských domů a stojí na něm stany a stánky trhu."
+      ],
+      "status": "draft",
+      "note": "Panorama Mapy.com je noční snímek z prosince 2015 (vánoční trhy)."
+    },
+    {
+      "id": "trebon-hraz-svet",
+      "title": "Třeboň, hráz rybníka Svět",
+      "provider": "mapy",
+      "position": {
+        "lat": 49.001378,
+        "lng": 14.76949
+      },
+      "view": {
+        "yaw": 2.908,
+        "pitch": 0,
+        "fov": 1.2
+      },
+      "hints": [
+        "Silnice vede po hrázi těsně podél velké vodní plochy.",
+        "Hráz lemují staré mohutné stromy s rozložitými korunami.",
+        "Na protějším břehu je souvislý les a krajina kolem je rovinatá, bez kopců."
+      ],
+      "status": "draft",
+      "note": "Při kontrole ověřit, že jde opravdu o hráz Světa (bod u Novohradské ulice)."
+    },
+    {
+      "id": "silnice-zelec-ustrasice",
+      "title": "Silnice Želeč - Ústrašice",
+      "provider": "mapy",
+      "position": {
+        "lat": 49.322596,
+        "lng": 14.654258
+      },
+      "view": {
+        "yaw": 3.803,
+        "pitch": 0,
+        "fov": 1.2
+      },
+      "hints": [
+        "Silnice bez chodníku vede podél oraného pole na okraj vesnice.",
+        "Vpředu jsou rodinné domy s červenými i šedými střechami a stromy.",
+        "Na obzoru jsou jen nízké zalesněné kopce, krajina je mírně zvlněná."
+      ],
+      "status": "draft",
+      "note": "Bod je na okraji Želče u fotbalového hřiště. Při kontrole ověřit směr výhledu (k Želči, nebo k Ústrašicím)."
+    },
+    {
+      "id": "praha-karluv-most",
+      "title": "Praha, Karlův most",
+      "provider": "mapillary",
+      "imageId": "1048171296604555",
+      "position": {
+        "lat": 50.086476854636,
+        "lng": 14.411486649236
+      },
+      "view": {
+        "center": [0.86, 0.5],
+        "zoom": 0
+      },
+      "hints": [
+        "Široký dlážděný most je jen pro pěší a chodí po něm turisté.",
+        "Na kamenném zábradlí mostu stojí tmavé kamenné sousoší postav.",
+        "Za zábradlím jsou vidět červené střechy starých domů a zeleň na svahu."
+      ],
+      "status": "draft",
+      "note": "Mapillary, autor jeffreymartin, 2023."
+    },
+    {
+      "id": "sobeslav-zimni-stadion",
+      "title": "Soběslav, zimní stadion",
+      "provider": "mapy",
+      "position": {
+        "lat": 49.255562,
+        "lng": 14.717351
+      },
+      "view": {
+        "yaw": 0,
+        "pitch": 0,
+        "fov": 1.2
+      },
+      "hints": [
+        "Vpravo u silnice stojí velká hala z vlnitého plechu s reklamními tabulemi.",
+        "Za ní je vysoká šedá budova bez oken a modrá přístavba s velkým kulatým znakem.",
+        "U silnice je autobusová zastávka s přístřeškem a před halou parkují auta."
+      ],
+      "status": "draft",
+      "note": "Poloha stadionu podle Mapy.com: Nová 401/1, Soběslav."
+    }
+  ]
 }

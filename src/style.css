@@ -346,7 +346,8 @@ legend {
 }
 /* Knihovny panoramat přidávají kontejneru vlastní position: relative, proto vyšší specifičnost. */
 .pano,
-.game__pano > .pano {
+.game__pano > .pano,
+.ed-pano-wrap > .pano {
   position: absolute;
   inset: 0;
 }
