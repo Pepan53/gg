@@ -184,7 +184,7 @@ export class MapillaryProvider implements PanoramaProvider {
       bbox: [p.lng - d, p.lat - d, p.lng + d, p.lat + d].map((v) => v.toFixed(6)).join(','),
       is_pano: 'true',
       fields: 'id,is_pano,geometry,computed_geometry,thumb_256_url,captured_at,creator',
-      limit: '40',
+      limit: '300',
     });
     const res = await this.get(
       `${GRAPH}/images?${params.toString()}`,
