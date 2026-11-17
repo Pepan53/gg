@@ -169,6 +169,9 @@ export class MapillaryProvider implements PanoramaProvider {
     const viewer = new Viewer({
       accessToken: token,
       container,
+      // Dlaždicové načítání obrazu (image_tiles) aktuální API odmítá chybou
+      // "Param z must be a number"; celé snímky v rozlišení 2048 px fungují.
+      imageTiling: false,
       component: {
         cover: false,
         sequence: false,
