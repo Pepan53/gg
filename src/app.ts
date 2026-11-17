@@ -129,7 +129,7 @@ export class App {
       // Po obnovení stránky při hře více hráčů nejdřív předávací obrazovka,
       // aby se cizí tah neukázal někomu jinému.
       if (isMultiplayer(this.state as GameState) && this.state?.phase === 'playing') {
-        return this.renderHandoff(true);
+        return this.renderGame(true);
       }
       this.route();
     } else {
@@ -158,7 +158,7 @@ export class App {
       case 'loading':
         return void this.loadRound();
       case 'handoff':
-        return this.renderHandoff(false);
+        return this.renderGame();
       case 'playing':
         return this.renderGame();
       case 'result':
@@ -469,7 +469,7 @@ export class App {
               onclick: () => {
                 this.setState(expireIfNeeded(resumable, Date.now()));
                 if (isMultiplayer(resumable) && this.state?.phase === 'playing')
-                  this.renderHandoff(true);
+                  this.renderGame(true);
                 else this.route();
               },
             },
@@ -563,67 +563,69 @@ export class App {
     }
   }
 
-  // ---------- předávací obrazovka ----------
+  // ---------- předávací okno ----------
 
-  private renderHandoff(resume: boolean): void {
-    const state = this.state;
-    if (!state) return this.renderIntro();
+  /**
+   * Okno nad hrou: kdo je na tahu. Pozadí je rozmazané, takže se nic neprozradí,
+   * a obrazovka nepřeblikává (panorama se zatím načítá pod oknem).
+   */
+  private handoffGate(resume: boolean, onStart: () => void): HTMLElement {
+    const state = this.state as GameState;
     const name = state.settings.players[state.current] ?? '';
-    const startBtn = h(
-      'button',
-      {
-        class: 'btn btn--primary btn--big',
-        type: 'button',
-        onclick: () => {
-          const s = this.state;
-          if (!s) return;
-          if (s.phase === 'handoff') this.setState(beginTurn(s, Date.now()));
-          else this.setState(expireIfNeeded(s, Date.now()));
-          this.route();
-        },
-      },
-      resume ? `Jsem ${name}, pokračovat` : `Jsem ${name}, začít`,
-    );
-    const screen = h(
-      'main',
-      { class: 'screen center handoff' },
-      h('p', { class: 'handoff__round' }, `Kolo ${state.rounds.length} z ${ROUNDS_PER_GAME}`),
+    const limit = turnLimitSec(state.settings);
+    return h(
+      'div',
+      { class: 'gate' },
       h(
-        'span',
+        'div',
         {
-          class: 'avatar',
-          style: `background:${playerColor(state.current)}`,
-          'aria-hidden': 'true',
+          class: 'gate__card',
+          role: 'dialog',
+          'aria-modal': 'true',
+          'aria-labelledby': 'gate-title',
         },
-        name.slice(0, 1).toUpperCase(),
-      ),
-      h('h2', { tabindex: -1 }, `Na tahu je ${name}`),
-      h(
-        'p',
-        { class: 'status' },
-        resume
-          ? 'Tah už běží a čas se počítá dál. Předej zařízení hráči, který je na tahu.'
-          : 'Předej mu zařízení. Ostatní se teď nedívejte, ať je hra férová.',
-      ),
-      turnLimitSec(state.settings) > 0 &&
+        h('p', { class: 'handoff__round' }, `Kolo ${state.rounds.length} z ${ROUNDS_PER_GAME}`),
+        h(
+          'span',
+          {
+            class: 'avatar',
+            style: `background:${playerColor(state.current)}`,
+            'aria-hidden': 'true',
+          },
+          name.slice(0, 1).toUpperCase(),
+        ),
+        h('h2', { id: 'gate-title', tabindex: -1 }, `Na tahu je ${name}`),
         h(
           'p',
-          { class: 'field-note' },
-          `Čas na tah: ${formatLimit(turnLimitSec(state.settings))}. Začne běžet po stisku tlačítka.`,
+          { class: 'status' },
+          resume
+            ? 'Tah už běží a čas se počítá dál. Předej zařízení hráči, který je na tahu.'
+            : 'Předej mu zařízení. Ostatní se teď nedívejte, ať je hra férová.',
         ),
-      startBtn,
-      h(
-        'button',
-        { class: 'btn btn--ghost', type: 'button', onclick: () => this.quitToIntro() },
-        'Odejít (hra zůstane uložená)',
+        limit > 0 &&
+          !resume &&
+          h(
+            'p',
+            { class: 'field-note' },
+            `Čas na tah: ${formatLimit(limit)}. Začne běžet po stisku tlačítka.`,
+          ),
+        h(
+          'button',
+          { class: 'btn btn--primary btn--big gate__start', type: 'button', onclick: onStart },
+          resume ? `Jsem ${name}, pokračovat` : `Jsem ${name}, začít`,
+        ),
+        h(
+          'button',
+          { class: 'btn btn--ghost', type: 'button', onclick: () => this.quitToIntro() },
+          'Odejít (hra zůstane uložená)',
+        ),
       ),
     );
-    this.mount(screen, startBtn);
   }
 
   // ---------- hra ----------
 
-  private renderGame(): void {
+  private renderGame(resume = false): void {
     const state = this.state;
     const round = state && currentRound(state);
     const turn = state && currentTurn(state);
@@ -743,7 +745,27 @@ export class App {
       h('div', { class: 'game__pano' }, panoEl, panoOverlay, hud, openBtn),
       panel,
     );
-    this.mount(screen);
+
+    // Předávací okno nad hrou (víc hráčů): při předání tahu nebo po obnovení stránky.
+    const gated = state.phase === 'handoff' || (resume && multi);
+    let gate: HTMLElement | null = null;
+    if (gated) {
+      gate = this.handoffGate(state.phase !== 'handoff', () => {
+        const s = this.state;
+        if (!s) return;
+        this.setState(
+          s.phase === 'handoff' ? beginTurn(s, Date.now()) : expireIfNeeded(s, Date.now()),
+        );
+        if (this.state && this.state.phase !== 'playing') return this.route();
+        gate?.remove();
+        gate = null;
+        screen.removeAttribute('inert');
+        (screen.querySelector('h2') as HTMLElement | null)?.focus({ preventScroll: true });
+      });
+      screen.setAttribute('inert', '');
+    }
+    this.mount(gate ? h('div', { class: 'gate-wrap' }, screen, gate) : screen);
+    gate?.querySelector<HTMLElement>('.gate__start')?.focus();
 
     // --- rozbalovací mapa ---
     let guessMap: GuessMap | null = null;
@@ -1226,163 +1248,216 @@ export class App {
 
   // ---------- konec hry ----------
 
+  /** Tabulka kol jednoho hráče (stejná jako v sólo hře). */
+  private roundsTable(
+    state: GameState,
+    player: number,
+    countries: CountryIndex | null,
+  ): HTMLElement {
+    const countdown = state.settings.type === 'countdown';
+    return h(
+      'table',
+      { class: 'rounds' },
+      h('caption', { class: 'sr-only' }, `Přehled kol: ${state.settings.players[player] ?? ''}`),
+      h(
+        'thead',
+        {},
+        h(
+          'tr',
+          {},
+          h('th', { scope: 'col' }, 'Kolo'),
+          h('th', { scope: 'col' }, 'Místo'),
+          h('th', { scope: 'col' }, state.settings.type === 'country' ? 'Tip' : 'Vzdálenost'),
+          h('th', { scope: 'col', class: 'num' }, 'Body'),
+        ),
+      ),
+      h(
+        'tbody',
+        {},
+        ...state.rounds.map((r, i) => {
+          const res = r.turns[player]?.result ?? null;
+          return h(
+            'tr',
+            {},
+            h('th', { scope: 'row' }, String(i + 1)),
+            h('td', {}, this.placeNameEl(r)),
+            h('td', {}, this.guessText(res, countries)),
+            h('td', { class: 'num' }, this.pointsText(res, countdown)),
+          );
+        }),
+      ),
+    );
+  }
+
   private renderFinal(): void {
     const state = this.state;
     if (!state) return this.renderIntro();
     const settings = state.settings;
-    const multi = isMultiplayer(state);
-    const max = MAX_POINTS * ROUNDS_PER_GAME;
     void (settings.type === 'country' ? loadCountries() : Promise.resolve(null)).then(
       (countries) => {
         if (this.state !== state) return;
-        let summary: HTMLElement;
-        if (multi) {
-          const st = standings(state);
-          const top = st.filter((s) => s.rank === 1);
-          summary = h(
-            'div',
-            {},
-            h(
-              'p',
-              { class: 'bigscore' },
-              top.length > 1
-                ? `Remíza: ${top.map((t) => t.name).join(', ')}`
-                : `Vyhrává ${top[0]?.name ?? ''}`,
-            ),
-            h(
-              'table',
-              { class: 'rounds standings' },
-              h('caption', { class: 'sr-only' }, 'Pořadí hráčů'),
-              h(
-                'thead',
-                {},
-                h(
-                  'tr',
-                  {},
-                  h('th', { scope: 'col' }, 'Pořadí'),
-                  h('th', { scope: 'col' }, 'Hráč'),
-                  h('th', { scope: 'col', class: 'num' }, 'Body'),
-                ),
-              ),
-              h(
-                'tbody',
-                {},
-                ...st.map((s) =>
-                  h(
-                    'tr',
-                    {},
-                    h('td', {}, `${s.rank}.`),
-                    h(
-                      'th',
-                      { scope: 'row' },
-                      h('span', { class: 'dot', style: `background:${playerColor(s.player)}` }),
-                      ` ${s.name}`,
-                    ),
-                    h('td', { class: 'num' }, `${formatPoints(s.points)} / ${formatPoints(max)}`),
-                  ),
-                ),
-              ),
-            ),
-          );
-        } else {
-          summary = h(
-            'div',
-            {},
-            h(
-              'p',
-              { class: 'bigscore' },
-              h('strong', {}, formatPoints(playerTotal(state, 0))),
-              ` z ${formatPoints(max)} bodů`,
-            ),
-            h(
-              'table',
-              { class: 'rounds' },
-              h('caption', { class: 'sr-only' }, 'Přehled kol'),
-              h(
-                'thead',
-                {},
-                h(
-                  'tr',
-                  {},
-                  h('th', { scope: 'col' }, 'Kolo'),
-                  h('th', { scope: 'col' }, 'Místo'),
-                  h('th', { scope: 'col' }, settings.type === 'country' ? 'Tip' : 'Vzdálenost'),
-                  h('th', { scope: 'col', class: 'num' }, 'Body'),
-                ),
-              ),
-              h(
-                'tbody',
-                {},
-                ...state.rounds.map((r, i) =>
-                  h(
-                    'tr',
-                    {},
-                    h('th', { scope: 'row' }, String(i + 1)),
-                    h('td', {}, this.placeNameEl(r)),
-                    h('td', {}, this.guessText(r.turns[0]?.result ?? null, countries)),
-                    h('td', { class: 'num' }, formatPoints(r.turns[0]?.result?.points ?? 0)),
-                  ),
-                ),
-              ),
-            ),
-          );
-        }
-
-        const mapEl = h('div', { class: 'resultmap', role: 'img', 'aria-label': 'Mapa všech kol' });
-        const screen = h(
-          'main',
-          { class: 'screen result final' },
-          h('div', { class: 'result__map' }, mapEl),
-          h(
-            'section',
-            { class: 'result__panel' },
-            h('h2', { tabindex: -1 }, 'Konec hry'),
-            summary,
-            h(
-              'div',
-              { class: 'actions' },
-              h(
-                'button',
-                {
-                  class: 'btn btn--primary',
-                  type: 'button',
-                  onclick: () => this.newGame(settings),
-                },
-                'Nová hra',
-              ),
-              h(
-                'button',
-                {
-                  class: 'btn',
-                  type: 'button',
-                  onclick: () => {
-                    clearGame();
-                    this.state = null;
-                    this.renderIntro();
-                  },
-                },
-                'Na úvod',
-              ),
-            ),
-          ),
-        );
-        this.mount(screen);
-        const entries = state.rounds.flatMap((r) =>
-          settings.players.map((_, i) => {
-            const g = r.turns[i]?.result?.guess;
-            return {
-              guess: g?.kind === 'point' ? g.point : null,
-              target: r.target.position,
-              color: playerColor(i),
-            };
-          }),
-        );
-        this.mountResultMap(mapEl, () =>
-          createResultMap(mapEl, entries, this.region().viewBBox, () =>
-            mapEl.append(h('p', { class: 'mapmsg', role: 'alert' }, 'Mapu se nepodařilo načíst.')),
-          ),
-        );
+        this.renderFinalWith(state, countries);
       },
     );
+  }
+
+  private renderFinalWith(state: GameState, countries: CountryIndex | null): void {
+    const settings = state.settings;
+    const multi = isMultiplayer(state);
+    const max = MAX_POINTS * ROUNDS_PER_GAME;
+    /** Hráč rozkliknutý v pořadí (víc hráčů), null = přehled všech. */
+    let selected: number | null = multi ? null : 0;
+
+    const mapEl = h('div', { class: 'resultmap', role: 'img', 'aria-label': 'Mapa všech kol' });
+    const detail = h('div', { class: 'final__detail', 'aria-live': 'polite' });
+    const rowButtons: HTMLButtonElement[] = [];
+
+    let summary: HTMLElement;
+    if (multi) {
+      const st = standings(state);
+      const top = st.filter((x) => x.rank === 1);
+      summary = h(
+        'div',
+        {},
+        h(
+          'p',
+          { class: 'bigscore' },
+          top.length > 1
+            ? `Remíza: ${top.map((t) => t.name).join(', ')}`
+            : `Vyhrává ${top[0]?.name ?? ''}`,
+        ),
+        h('p', { class: 'field-note' }, 'Klepni na hráče a uvidíš jeho kola.'),
+        h(
+          'ol',
+          { class: 'standings-list' },
+          ...st.map((x) => {
+            const btn = h(
+              'button',
+              {
+                class: 'standing',
+                type: 'button',
+                'aria-pressed': 'false',
+                'data-player': x.player,
+                onclick: () => select(selected === x.player ? null : x.player),
+              },
+              h('span', { class: 'standing__rank' }, `${x.rank}.`),
+              h('span', { class: 'dot', style: `background:${playerColor(x.player)}` }),
+              h('span', { class: 'standing__name' }, x.name),
+              h(
+                'span',
+                { class: 'standing__pts' },
+                `${formatPoints(x.points)} / ${formatPoints(max)}`,
+              ),
+            );
+            rowButtons.push(btn);
+            return h('li', {}, btn);
+          }),
+        ),
+        detail,
+      );
+    } else {
+      summary = h(
+        'div',
+        {},
+        h(
+          'p',
+          { class: 'bigscore' },
+          h('strong', {}, formatPoints(playerTotal(state, 0))),
+          ` z ${formatPoints(max)} bodů`,
+        ),
+        this.roundsTable(state, 0, countries),
+      );
+    }
+
+    const screen = h(
+      'main',
+      { class: 'screen result final' },
+      h('div', { class: 'result__map' }, mapEl),
+      h(
+        'section',
+        { class: 'result__panel' },
+        h('h2', { tabindex: -1 }, 'Konec hry'),
+        summary,
+        h(
+          'div',
+          { class: 'actions' },
+          h(
+            'button',
+            { class: 'btn btn--primary', type: 'button', onclick: () => this.newGame(settings) },
+            'Nová hra',
+          ),
+          h(
+            'button',
+            {
+              class: 'btn',
+              type: 'button',
+              onclick: () => {
+                clearGame();
+                this.state = null;
+                this.renderIntro();
+              },
+            },
+            'Na úvod',
+          ),
+        ),
+      ),
+    );
+    this.mount(screen);
+
+    // Mapa: všichni hráči, nebo jen rozkliknutý hráč.
+    let map: { resize(): void; destroy(): void } | null = null;
+    let version = 0;
+    const drawMap = () => {
+      const v = ++version;
+      map?.destroy();
+      map = null;
+      mapEl.replaceChildren();
+      const players = selected === null ? settings.players.map((_, i) => i) : [selected];
+      const entries = state.rounds.flatMap((r) =>
+        players.map((i) => {
+          const g = r.turns[i]?.result?.guess;
+          return {
+            guess: g?.kind === 'point' ? g.point : null,
+            target: r.target.position,
+            color: playerColor(i),
+          };
+        }),
+      );
+      void createResultMap(mapEl, entries, this.region().viewBBox, () =>
+        mapEl.append(h('p', { class: 'mapmsg', role: 'alert' }, 'Mapu se nepodařilo načíst.')),
+      ).then((m) => {
+        if (v !== version) m.destroy();
+        else map = m;
+      });
+    };
+    this.cleanups.push(() => {
+      version++;
+      map?.destroy();
+    });
+    const ro = new ResizeObserver(() => map?.resize());
+    ro.observe(mapEl);
+    this.cleanups.push(() => ro.disconnect());
+
+    const select = (player: number | null) => {
+      selected = player;
+      for (const b of rowButtons) {
+        b.setAttribute('aria-pressed', String(Number(b.dataset['player']) === player));
+      }
+      if (player === null) {
+        detail.replaceChildren();
+      } else {
+        detail.replaceChildren(
+          h(
+            'h3',
+            { class: 'final__who' },
+            h('span', { class: 'dot', style: `background:${playerColor(player)}` }),
+            ` ${settings.players[player] ?? ''}: ${formatPoints(playerTotal(state, player))} z ${formatPoints(max)} bodů`,
+          ),
+          this.roundsTable(state, player, countries),
+        );
+      }
+      drawMap();
+    };
+    drawMap();
   }
 }

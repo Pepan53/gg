@@ -846,3 +846,95 @@ legend {
   font-weight: 800;
   width: 4rem;
 }
+
+/* předávací okno nad hrou */
+.gate {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: calc(1rem + var(--safe-t)) 1rem calc(1rem + var(--safe-b));
+  background: rgb(15 23 42 / 0.55);
+  backdrop-filter: blur(22px) saturate(0.6);
+  -webkit-backdrop-filter: blur(22px) saturate(0.6);
+  animation: gate-in 0.18s ease-out;
+}
+.gate__card {
+  width: min(420px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.5rem 1.25rem 1rem;
+  border-radius: 22px;
+  background: var(--surface);
+  text-align: center;
+  box-shadow: 0 20px 60px rgb(0 0 0 / 0.35);
+}
+.gate__card h2 {
+  margin: 0;
+  font-size: clamp(1.5rem, 6vw, 2rem);
+}
+.gate__card .status {
+  margin: 0;
+}
+@keyframes gate-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gate {
+    animation: none;
+  }
+}
+
+/* závěrečné pořadí: klikací hráči */
+.standings-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.standing {
+  width: 100%;
+  min-height: var(--tap);
+  display: grid;
+  grid-template-columns: 2.2rem auto 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.9rem;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.standing[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.standing__rank {
+  font-weight: 800;
+}
+.standing__name {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.standing__pts {
+  font-variant-numeric: tabular-nums;
+}
+.final__detail:empty {
+  display: none;
+}
+.final__who {
+  margin: 0.75rem 0 0.25rem;
+  font-size: 1.05rem;
+}

@@ -10,7 +10,7 @@ const chrome = { launchOptions: { executablePath: process.env.CHROME_PATH } };
  */
 export default defineConfig({
   testDir: 'tests/e2e',
-  timeout: 30_000,
+  timeout: 60_000,
   expect: { timeout: 8_000 },
   fullyParallel: true,
   reporter: [['list']],

@@ -285,12 +285,15 @@ test('Grayscale: panorama se zobrazí černobíle a je to vidět v liště', asy
 });
 
 test('Víc hráčů: předávání, skryté tipy, společný výsledek a pořadí', async ({ page }) => {
+  // Deset tahů trvá při souběžném běhu testů déle než výchozích 30 s.
+  test.setTimeout(120_000);
   await offline(page);
   await startGame(page, 'Česko', 'Bez limitu', { players: ['Ana', 'Bob'] });
   for (let round = 1; round <= 5; round++) {
     for (const [i, name] of ['Ana', 'Bob'].entries()) {
-      await expect(page.getByRole('heading', { name: `Na tahu je ${name}` })).toBeVisible();
+      await expect(page.getByRole('dialog')).toContainText(`Na tahu je ${name}`);
       await page.getByRole('button', { name: `Jsem ${name}, začít` }).click();
+      await expect(page.getByRole('dialog')).toHaveCount(0);
       await expect(page.getByTestId('fake-pano')).toBeVisible();
       await expect(page.locator('.hud')).toContainText(name);
       await openMap(page);
@@ -303,8 +306,14 @@ test('Víc hráčů: předávání, skryté tipy, společný výsledek a pořad�
     await page.getByRole('button', { name: round < 5 ? 'Další kolo' : 'Celkový výsledek' }).click();
   }
   await expect(page.getByRole('heading', { name: 'Konec hry' })).toBeVisible();
-  await expect(page.locator('.standings tbody tr')).toHaveCount(2);
+  await expect(page.locator('.standing')).toHaveCount(2);
   await expect(page.locator('.bigscore')).toContainText(/Vyhrává|Remíza/);
+  // Klepnutí na hráče ukáže jeho kola jako v sólo hře, druhé klepnutí je skryje.
+  await page.locator('.standing', { hasText: 'Bob' }).click();
+  await expect(page.locator('.final__who')).toContainText('Bob');
+  await expect(page.locator('.final__detail .rounds tbody tr')).toHaveCount(5);
+  await page.locator('.standing', { hasText: 'Bob' }).click();
+  await expect(page.locator('.final__detail .rounds')).toHaveCount(0);
 });
 
 test('Víc hráčů: obnovení stránky během tahu nejdřív ukáže předávací obrazovku', async ({
@@ -318,9 +327,9 @@ test('Víc hráčů: obnovení stránky během tahu nejdřív ukáže předávac
   await page.getByRole('button', { name: 'Jsem Bob, začít' }).click();
   await expect(page.getByTestId('fake-pano')).toBeVisible();
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Na tahu je Bob' })).toBeVisible();
-  await expect(page.getByTestId('fake-pano')).toHaveCount(0);
-  await expect(page.locator('.guessmap')).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toContainText('Na tahu je Bob');
+  // Hra pod oknem je neaktivní, dokud hráč nepotvrdí, že je u zařízení.
+  await expect(page.locator('main.game')).toHaveAttribute('inert', '');
   await page.getByRole('button', { name: 'Jsem Bob, pokračovat' }).click();
   await expect(page.locator('.hud')).toContainText('Bob');
 });
