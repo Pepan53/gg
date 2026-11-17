@@ -19,11 +19,19 @@ export interface Target {
   placeId?: string;
 }
 
-/** Výhled v panoramatu: střed obrazu (0..1, 0..1) a přiblížení (Mapillary). */
-export interface PanoView {
+/** Výhled Mapillary: střed obrazu (0..1, 0..1) a přiblížení. */
+export interface MapillaryView {
   center: [number, number];
   zoom: number;
 }
+/** Výhled Mapy.com: kamera v radiánech (yaw 0 = sever). */
+export interface MapyView {
+  yaw: number;
+  pitch: number;
+  fov: number;
+}
+export type PanoView = MapillaryView | MapyView;
+export const isMapyView = (v: PanoView): v is MapyView => 'yaw' in v;
 
 /** Tip: bod na mapě, nebo stát (mód Země). */
 export type Guess = { kind: 'point'; point: LatLng } | { kind: 'country'; code: string };

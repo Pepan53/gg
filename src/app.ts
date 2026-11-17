@@ -35,13 +35,9 @@ import {
   type RegionDef,
   type RegionId,
 } from './core/modes';
-import {
-  judgeAvailability,
-  placeToTarget,
-  playablePlaces,
-  type LearningPlace,
-} from './core/places';
+import { placeToTarget, playablePlaces, type LearningPlace } from './core/places';
 import { newId, randomItem } from './core/random';
+import { checkPlace } from './learning/check';
 import { publishedPlaces } from './learning/store';
 import { MAX_POINTS } from './core/scoring';
 import { clearGame, loadGame, saveGame } from './core/storage';
@@ -153,14 +149,10 @@ export class App {
       h('main', { class: 'screen center' }, h('div', { class: 'spinner' })),
     );
     const { renderEditor } = await import('./ui/editor');
-    this.editorCleanup = renderEditor(
-      this.root,
-      this.providers.mapillary as MapillaryProvider,
-      () => {
-        history.pushState(null, '', location.pathname);
-        this.closeEditor();
-      },
-    );
+    this.editorCleanup = renderEditor(this.root, this.providers, () => {
+      history.pushState(null, '', location.pathname);
+      this.closeEditor();
+    });
   }
 
   private closeEditor(): void {
@@ -581,18 +573,16 @@ export class App {
   /** Další dostupné schválené výukové místo, které se v této hře ještě nehrálo. */
   private async nextLearningTarget(signal: AbortSignal): Promise<Target> {
     const used = new Set(this.state?.rounds.map((r) => r.target.placeId));
-    const mapillary = this.providers.mapillary as Partial<MapillaryProvider>;
     for (;;) {
       const candidates = this.places.filter(
         (p) => !used.has(p.id) && !this.unavailablePlaces.has(p.id),
       );
       const place = randomItem(candidates);
       if (!place) throw new NoMorePlaces();
-      if (typeof mapillary.imageInfo !== 'function') return placeToTarget(place);
-      const info = await mapillary.imageInfo.call(this.providers.mapillary, place.imageId, signal);
-      const a = judgeAvailability(place, info);
-      if (a.ok) return placeToTarget(place);
-      if (!a.ok && a.reason === 'network') {
+      const a = await checkPlace(place, this.providers, signal);
+      // Cílem je skutečná poloha panoramatu, jak ji poskytovatel vrátil teď.
+      if (a.ok) return placeToTarget(place, a.position);
+      if (a.reason === 'network') {
         throw new ProviderError('Nepodařilo se ověřit výukové místo. Zkus to znovu.', 'network');
       }
       // Nedostupné nebo posunuté místo se do hry nezařadí, dokud ho někdo nezkontroluje.
@@ -734,7 +724,8 @@ export class App {
     const region = this.region();
 
     const panoEl = h('div', {
-      class: `pano${settings.grayscale ? ' pano--gray' : ''}`,
+      // Černobíle jen u Mapillary (u Mapy.com úprava obrazu není ověřená).
+      class: `pano${settings.grayscale && round.target.provider === 'mapillary' ? ' pano--gray' : ''}`,
       'aria-label': 'Panorama místa',
       role: 'region',
     });
@@ -1003,7 +994,7 @@ export class App {
       try {
         const r = this.state && currentRound(this.state);
         if (!r) return;
-        const v = await this.provider().createViewer(panoEl, r.target);
+        const v = await this.providers[r.target.provider].createViewer(panoEl, r.target);
         if (destroyed) return v.destroy();
         viewer = v;
         panoOverlay.hidden = true;

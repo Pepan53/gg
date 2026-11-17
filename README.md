@@ -177,14 +177,18 @@ kola se ukáže název místa a **2 až 3 vodítka**, podle kterých šlo místo
 | `reviewedBy`, `reviewedAt` | kdo a kdy místo naposledy zkontroloval (u schváleného povinné)            |
 | `note`                     | poznámka pro správce                                                      |
 
-**Ukládání a licence:** u míst držíme jen ID snímku Mapillary, jeho polohu a výhled. Snímky
-jsou pod CC BY-SA, takže trvalé uložení ID a souřadnic je v pořádku. Samotné obrázky se
-neukládají, načítají se vždy z Mapillary. Mapy.com se pro výuková místa nepoužívají.
+**Ukládání a licence:** u míst Mapillary držíme ID snímku, jeho polohu a výhled. Snímky
+jsou pod CC BY-SA, takže trvalé uložení ID a souřadnic je v pořádku. U míst Mapy.com
+držíme jen bod panoramatu a kameru, žádný obraz ani jiná data z API; panorama se při
+hře vždy najde znovu přes `panoramaExists` v okruhu 50 m. Podmínky Mapy.com trvalé
+uložení jednoho bodu výslovně neřeší, při širším zveřejnění je dobré to ověřit u Seznamu.
+Mapy.com se hodí pro Česko, kde Mapillary 360° snímky skoro nemá (ověřeno u Tábora,
+Českých Budějovic, Třeboně a Soběslavi).
 
 **Kdy se místo nehraje:**
 
 - není schválené nebo nemá 2 až 3 vodítka,
-- snímek v Mapillary zmizel nebo už není 360°,
+- panorama u poskytovatele zmizelo (Mapillary: snímek, Mapy.com: v okruhu 50 m žádné) nebo snímek už není 360°,
 - poloha snímku se oproti uložené posunula o víc než 50 m (vodítka by nemusela sedět).
 
 Hra to ověřuje těsně před kolem (dotaz na Mapillary). Nedostupné místo přeskočí a hraje
@@ -194,7 +198,7 @@ další. Když dojdou všechna, hra skončí s odehranými koly a nezasekne se.
 `https://pepan53.github.io/gg/#sprava`.
 
 1. **Přidat místo:** název a buď ID či odkaz snímku z mapillary.com, nebo souřadnice
-   a „Najít v okolí“ (360° snímky v okolí ~150 m s náhledem, seřazené od nejbližšího).
+   a „Přidat z Mapy.com“ (nejbližší panorama do 100 m, pro Česko), nebo „Najít v okolí“ (360° snímky v okolí ~150 m s náhledem, seřazené od nejbližšího).
 2. Natoč panorama, aby bylo vidět to podstatné, a dej **Uložit tento výhled jako výchozí**.
 3. Napiš 2 až 3 vodítka. Jen to, co je ve výchozím výhledu opravdu vidět, žádná neověřená
    tvrzení. Každá úprava vrátí místo mezi návrhy.

@@ -48,7 +48,22 @@ describe('výuková místa', () => {
     const { file, errors } = validateFile(fixture);
     expect(errors).toEqual([]);
     const ids = playablePlaces(file!).map((p) => p.id);
-    expect(ids).toEqual(['test-praha', 'test-pariz']);
+    expect(ids).toEqual(['test-praha', 'test-pariz', 'test-tabor']);
+  });
+
+  it('místo z Mapy.com má kameru místo ID snímku', () => {
+    const mapy: LearningPlace = {
+      ...base,
+      provider: 'mapy',
+      imageId: undefined,
+      view: { yaw: 1, pitch: 0, fov: 1.2 },
+    };
+    expect(validatePlace(mapy)).toEqual([]);
+    expect(validatePlace({ ...mapy, view: { center: [0.5, 0.5], zoom: 0 } })).not.toEqual([]);
+    expect(validatePlace({ ...base, imageId: undefined })).not.toEqual([]);
+    const t = placeToTarget(mapy, { lat: 50.0801, lng: 14.4201 });
+    expect(t).toMatchObject({ provider: 'mapy', position: { lat: 50.0801, lng: 14.4201 } });
+    expect(t.panoId).toBe('14.420100,50.080100');
   });
 
   it('opakované ID je chyba', () => {

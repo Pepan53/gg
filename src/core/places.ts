@@ -1,21 +1,21 @@
-import type { PanoView, Target } from './game';
+import type { MapillaryView, MapyView, PanoView, Target } from './game';
 import { haversineKm, isValidLatLng, type LatLng } from './geo';
 
 /**
- * Výukové místo: ručně vybrané panorama Mapillary s vodítky.
+ * Výukové místo: ručně vybrané panorama s vodítky.
  *
- * Ukládáme jen ID snímku, jeho polohu a výhled. Snímky Mapillary jsou pod
- * licencí CC BY-SA, takže ID i souřadnice smíme mít u sebe trvale.
+ * Mapillary: ukládáme ID snímku, jeho polohu a výhled (CC BY-SA, smí se uložit).
+ * Mapy.com: ukládáme jen bod panoramatu a kameru; obraz se vždy načítá z Mapy.com.
  */
 export interface LearningPlace {
   /** Naše stálé ID místa (krátký slug). */
   id: string;
   /** Interní název pro editor; hráč ho uvidí až po vyhodnocení kola. */
   title: string;
-  provider: 'mapillary';
-  /** ID snímku Mapillary. Může časem zaniknout, proto kontrolujeme dostupnost. */
-  imageId: string;
-  /** Poloha snímku v době výběru (computed_geometry). */
+  provider: 'mapillary' | 'mapy';
+  /** ID snímku Mapillary (jen Mapillary). Může zaniknout, proto kontrolujeme dostupnost. */
+  imageId?: string;
+  /** Poloha panoramatu v době výběru. */
   position: LatLng;
   /** Počáteční výhled, ke kterému se vztahují vodítka. */
   view: PanoView;
@@ -50,20 +50,12 @@ export function validatePlace(p: LearningPlace): string[] {
   if (!/^[a-z0-9-]{2,40}$/.test(p.id))
     errors.push('ID smí mít jen malá písmena, číslice a pomlčky.');
   if (!p.title.trim()) errors.push('Chybí název.');
-  if (!/^\d{5,20}$/.test(p.imageId)) errors.push('ID snímku Mapillary musí být číslo.');
+  if (p.provider !== 'mapillary' && p.provider !== 'mapy') errors.push('Neznámý poskytovatel.');
+  if (p.provider === 'mapillary' && !/^\d{5,20}$/.test(p.imageId ?? '')) {
+    errors.push('ID snímku Mapillary musí být číslo.');
+  }
   if (!isValidLatLng(p.position)) errors.push('Neplatná poloha.');
-  const [cx, cy] = p.view?.center ?? [];
-  const okView =
-    typeof cx === 'number' &&
-    typeof cy === 'number' &&
-    cx >= 0 &&
-    cx <= 1 &&
-    cy >= 0 &&
-    cy <= 1 &&
-    typeof p.view.zoom === 'number' &&
-    p.view.zoom >= 0 &&
-    p.view.zoom <= 3;
-  if (!okView) errors.push('Neplatný výhled.');
+  if (!validView(p)) errors.push('Neplatný výhled.');
   const hints = p.hints.map((h) => h.trim()).filter(Boolean);
   if (hints.length < MIN_HINTS || hints.length > MAX_HINTS) {
     errors.push(`Místo potřebuje ${MIN_HINTS} až ${MAX_HINTS} vodítka.`);
@@ -76,6 +68,27 @@ export function validatePlace(p: LearningPlace): string[] {
     errors.push('Schválené místo musí mít kontrolora a datum kontroly.');
   }
   return errors;
+}
+
+function validView(p: LearningPlace): boolean {
+  const v = p.view as Partial<MapillaryView & MapyView> | undefined;
+  if (!v) return false;
+  const num = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
+  if (p.provider === 'mapy') {
+    return num(v.yaw) && num(v.pitch) && num(v.fov) && v.fov > 0 && v.fov <= Math.PI;
+  }
+  const [cx, cy] = v.center ?? [];
+  return (
+    num(cx) &&
+    num(cy) &&
+    cx >= 0 &&
+    cx <= 1 &&
+    cy >= 0 &&
+    cy <= 1 &&
+    num(v.zoom) &&
+    v.zoom >= 0 &&
+    v.zoom <= 3
+  );
 }
 
 export function validateFile(f: unknown): { file: PlacesFile | null; errors: string[] } {
@@ -100,11 +113,15 @@ export function playablePlaces(file: PlacesFile): LearningPlace[] {
   return file.places.filter((p) => p.status === 'approved' && validatePlace(p).length === 0);
 }
 
-export function placeToTarget(p: LearningPlace): Target {
+export function placeToTarget(p: LearningPlace, actual?: LatLng): Target {
+  const position = actual ?? p.position;
   return {
-    provider: 'mapillary',
-    panoId: p.imageId,
-    position: p.position,
+    provider: p.provider,
+    panoId:
+      p.provider === 'mapy'
+        ? `${position.lng.toFixed(6)},${position.lat.toFixed(6)}`
+        : (p.imageId ?? ''),
+    position,
     view: p.view,
     placeId: p.id,
   };
@@ -112,7 +129,11 @@ export function placeToTarget(p: LearningPlace): Target {
 
 export type Availability =
   | { ok: true; position: LatLng }
-  | { ok: false; reason: 'missing' | 'not-pano' | 'moved' | 'network'; position?: LatLng };
+  | {
+      ok: false;
+      reason: 'missing' | 'not-pano' | 'moved' | 'network' | 'no-key';
+      position?: LatLng;
+    };
 
 /** Výsledek kontroly snímku proti uloženému místu. */
 export function judgeAvailability(
@@ -130,8 +151,9 @@ export function judgeAvailability(
 }
 
 export const AVAILABILITY_TEXT: Record<Exclude<Availability, { ok: true }>['reason'], string> = {
-  missing: 'Snímek už v Mapillary není.',
+  missing: 'Panorama už u poskytovatele není.',
   'not-pano': 'Snímek už není 360° panorama.',
   moved: 'Poloha snímku se změnila, vodítka je potřeba zkontrolovat.',
   network: 'Dostupnost se nepodařilo ověřit (síť).',
+  'no-key': 'Chybí klíč poskytovatele panoramat.',
 };

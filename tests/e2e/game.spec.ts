@@ -356,20 +356,21 @@ test('Učení: hrají se jen schválená místa a po kole se ukážou vodítka',
   await page.goto('/');
   await page.getByRole('radio', { name: /^Učení / }).check();
   await page.getByRole('button', { name: 'Hrát' }).click();
-  // Testovací data mají 2 schválená místa a 1 návrh, hra má tedy 2 kola.
+  // Testovací data mají 3 schválená místa (2 Mapillary, 1 Mapy.com) a 1 návrh, hra má tedy 3 kola.
   const titles: string[] = [];
-  for (let i = 1; i <= 2; i++) {
-    await expect(page.locator('.hud')).toContainText(`${i}/2`);
+  for (let i = 1; i <= 3; i++) {
+    await expect(page.locator('.hud')).toContainText(`${i}/3`);
     await guess(page);
     await expect(page.locator('.hints')).toContainText('Podle čeho šlo místo poznat');
     const n = await page.locator('.hints li').count();
     expect(n).toBeGreaterThanOrEqual(2);
     expect(n).toBeLessThanOrEqual(3);
     titles.push((await page.locator('.place').textContent()) ?? '');
-    await page.getByRole('button', { name: i < 2 ? 'Další kolo' : 'Celkový výsledek' }).click();
+    await page.getByRole('button', { name: i < 3 ? 'Další kolo' : 'Celkový výsledek' }).click();
   }
   expect(titles.join()).not.toContain('Neschválený');
-  await expect(page.locator('.bigscore')).toContainText('z 10 000 bodů');
+  expect(titles.join()).toContain('Tábor');
+  await expect(page.locator('.bigscore')).toContainText('z 15 000 bodů');
 });
 
 test('Správa míst: úprava vrátí místo mezi návrhy, schválení chce jméno, export JSON', async ({
@@ -379,7 +380,7 @@ test('Správa míst: úprava vrátí místo mezi návrhy, schválení chce jmén
   await offline(page);
   await page.goto('/#sprava');
   await expect(page.getByRole('heading', { name: 'Správa výukových míst' })).toBeVisible();
-  await expect(page.locator('.ed-item')).toHaveCount(3);
+  await expect(page.locator('.ed-item')).toHaveCount(4);
   await page.locator('.ed-item', { hasText: 'Praha' }).click();
   await expect(page.getByTestId('fake-pano')).toBeVisible();
   await page.getByRole('textbox', { name: 'Vodítko 3' }).fill('Nové vodítko k výhledu.');
@@ -407,8 +408,15 @@ test('Správa míst: úprava vrátí místo mezi návrhy, schválení chce jmén
   await page.getByPlaceholder('Souřadnice').fill('49.1951, 16.6081');
   await page.getByRole('button', { name: 'Najít v okolí' }).click();
   await page.locator('.ed-result').getByRole('button', { name: 'Přidat' }).click();
-  await expect(page.locator('.ed-item')).toHaveCount(4);
+  await expect(page.locator('.ed-item')).toHaveCount(5);
   await expect(page.locator('.ed-detail h2')).toContainText('Brno, náměstí Svobody');
+  // Přidání místa z Mapy.com
+  await page.getByRole('button', { name: 'Přidat místo' }).click();
+  await page.getByPlaceholder('Např. Praha, Karlův most').fill('Soběslav, náměstí');
+  await page.getByPlaceholder('Souřadnice').fill('49.2595, 14.7186');
+  await page.getByRole('button', { name: 'Přidat z Mapy.com' }).click();
+  await expect(page.locator('.ed-item')).toHaveCount(6);
+  await expect(page.locator('.ed-detail')).toContainText('panorama Mapy.com');
   // Zpět do hry
   await page.getByRole('button', { name: 'Zpět do hry' }).click();
   await expect(page.getByRole('heading', { name: 'Kde na světě jsem?' })).toBeVisible();

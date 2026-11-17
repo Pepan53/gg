@@ -1,4 +1,4 @@
-import type { Target } from '../core/game';
+import { isMapyView, type Target } from '../core/game';
 import { isValidLatLng, type LatLng } from '../core/geo';
 import { CZ_GEOMETRY, type RegionDef } from '../core/modes';
 import { pointInGeometry } from '../core/polygon';
@@ -26,6 +26,7 @@ interface PanoHandle {
   error: string;
   errorCode: 'NONE' | 'PANORAMA_NOT_FOUND' | 'MISSING_API_KEY' | 'WRONG_API_KEY';
   setCamera(c: Camera): void;
+  getCamera(): Camera;
   destroy(): void;
 }
 interface PanoramaGlobal {
@@ -111,6 +112,22 @@ export class MapyProvider implements PanoramaProvider {
     return this.apiKey;
   }
 
+  /** Existuje panorama u bodu (výuková místa)? null = nepodařilo se ověřit. */
+  async panoInfo(
+    p: LatLng,
+    radius = 50,
+  ): Promise<{ exists: boolean; isPano?: boolean; position?: LatLng | null } | null> {
+    const apiKey = this.requireKey();
+    try {
+      const Panorama = await this.load();
+      const r = await Panorama.panoramaExists({ lon: p.lng, lat: p.lat, apiKey, radius });
+      if (!r.exists || !r.info) return { exists: false };
+      return { exists: true, isPano: true, position: { lat: r.info.lat, lng: r.info.lon } };
+    } catch {
+      return null;
+    }
+  }
+
   async findRandom(_region: RegionDef, signal: AbortSignal): Promise<Target> {
     const apiKey = this.requireKey();
     const Panorama = await this.load();
@@ -148,7 +165,8 @@ export class MapyProvider implements PanoramaProvider {
   async createViewer(container: HTMLElement, target: Target): Promise<PanoramaViewer> {
     const apiKey = this.requireKey();
     const Panorama = await this.load();
-    const yaw = (((target.heading ?? 0) % 360) * Math.PI) / 180;
+    const cam = target.view && isMapyView(target.view) ? target.view : null;
+    const yaw = cam ? cam.yaw : (((target.heading ?? 0) % 360) * Math.PI) / 180;
     let handle: PanoHandle | null = null;
 
     const open = async (): Promise<PanoHandle> => {
@@ -158,8 +176,9 @@ export class MapyProvider implements PanoramaProvider {
         lon: target.position.lng,
         lat: target.position.lat,
         apiKey,
-        radius: 5,
+        radius: 50,
         yaw,
+        ...(cam ? { pitch: cam.pitch, fov: cam.fov } : {}),
         showNavigation: true,
         lang: 'cs',
         hideErrors: true,
@@ -182,6 +201,11 @@ export class MapyProvider implements PanoramaProvider {
           .catch(() => undefined);
       },
       resize: () => window.dispatchEvent(new Event('resize')),
+      getView: async () => {
+        const c = handle?.getCamera();
+        if (!c) throw new Error('Panorama není načtené.');
+        return { yaw: c.yaw, pitch: c.pitch, fov: c.fov };
+      },
       destroy: () => {
         handle?.destroy();
         handle = null;

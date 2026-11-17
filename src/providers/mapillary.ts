@@ -1,6 +1,6 @@
 import { VectorTile } from '@mapbox/vector-tile';
 import { PbfReader } from 'pbf';
-import type { Target } from '../core/game';
+import { isMapyView, type Target } from '../core/game';
 import { haversineKm, isValidLatLng, type LatLng } from '../core/geo';
 import type { RegionArea, RegionDef } from '../core/modes';
 import { pointInGeometry } from '../core/polygon';
@@ -311,10 +311,11 @@ export class MapillaryProvider implements PanoramaProvider {
     });
     // Panorama načítáme jen přes moveTo (ne zároveň přes imageId v konstruktoru),
     // jinak druhý požadavek zruší první a moveTo skončí chybou CancelMapillaryError.
+    const view = target.view && !isMapyView(target.view) ? target.view : null;
     const applyView = () => {
-      if (!target.view) return;
-      viewer.setCenter(target.view.center);
-      viewer.setZoom(target.view.zoom);
+      if (!view) return;
+      viewer.setCenter(view.center);
+      viewer.setZoom(view.zoom);
     };
     try {
       await viewer.moveTo(target.panoId);
@@ -331,7 +332,7 @@ export class MapillaryProvider implements PanoramaProvider {
         void viewer
           .moveTo(target.panoId)
           .then(() => {
-            if (target.view) return applyView();
+            if (view) return applyView();
             viewer.setZoom(0);
             viewer.setCenter([0.5, 0.5]);
           })

@@ -1,9 +1,9 @@
-import type { LatLng } from '../core/geo';
+import { isMapyView } from '../core/game';
+import { haversineKm, type LatLng } from '../core/geo';
 import {
   AVAILABILITY_TEXT,
   MAX_HINTS,
   MAX_HINT_LENGTH,
-  judgeAvailability,
   placeToTarget,
   validateFile,
   validatePlace,
@@ -12,8 +12,10 @@ import {
   type PlacesFile,
 } from '../core/places';
 import { clearDraft, loadDraft, publishedPlaces, saveDraft } from '../learning/store';
+import { checkPlace } from '../learning/check';
 import type { MapillaryProvider, NearbyImage } from '../providers/mapillary';
-import type { PanoramaViewer } from '../providers/types';
+import type { MapyProvider } from '../providers/mapy';
+import type { PanoramaProvider, PanoramaViewer } from '../providers/types';
 import { h } from './dom';
 
 /**
@@ -22,9 +24,11 @@ import { h } from './dom';
  */
 export function renderEditor(
   root: HTMLElement,
-  provider: MapillaryProvider,
+  providers: Record<'mapillary' | 'mapy', PanoramaProvider>,
   onExit: () => void,
 ): () => void {
+  const mapillary = providers.mapillary as MapillaryProvider;
+  const mapy = providers.mapy as MapyProvider;
   let file: PlacesFile = structuredClone(loadDraft() ?? publishedPlaces());
   let selectedId: string | null = file.places[0]?.id ?? null;
   const availability = new Map<string, Availability | 'checking'>();
@@ -97,14 +101,15 @@ export function renderEditor(
   };
 
   const showViewer = async (p: LearningPlace, force = false) => {
-    if (!force && viewerFor === `${p.imageId}`) return;
+    const key = `${p.provider}:${p.imageId ?? `${p.position.lat},${p.position.lng}`}`;
+    if (!force && viewerFor === key) return;
     viewer?.destroy();
     viewer = null;
-    viewerFor = p.imageId;
+    viewerFor = key;
     panoEl.replaceChildren(h('p', { class: 'pano__overlay' }, 'Načítám panorama...'));
     try {
       panoEl.replaceChildren();
-      viewer = await provider.createViewer(panoEl, placeToTarget(p));
+      viewer = await providers[p.provider].createViewer(panoEl, placeToTarget(p));
     } catch {
       panoEl.replaceChildren(
         h('p', { class: 'pano__overlay', role: 'alert' }, 'Panorama se nepodařilo načíst.'),
@@ -115,8 +120,7 @@ export function renderEditor(
   const check = async (p: LearningPlace) => {
     availability.set(p.id, 'checking');
     renderList();
-    const info = await provider.imageInfo(p.imageId);
-    availability.set(p.id, judgeAvailability(p, info));
+    availability.set(p.id, await checkPlace(p, providers));
     renderAll();
   };
 
@@ -253,16 +257,17 @@ export function renderEditor(
       h(
         'p',
         { class: 'field-note' },
-        `ID ${p.id} · snímek Mapillary ${p.imageId} · ${p.position.lat.toFixed(5)}, ${p.position.lng.toFixed(5)} · `,
-        h(
-          'a',
-          {
-            href: `https://www.mapillary.com/app/?pKey=${p.imageId}`,
-            target: '_blank',
-            rel: 'noopener',
-          },
-          'otevřít v Mapillary',
-        ),
+        `ID ${p.id} · ${p.provider === 'mapy' ? 'panorama Mapy.com' : `snímek Mapillary ${p.imageId}`} · ${p.position.lat.toFixed(5)}, ${p.position.lng.toFixed(5)}`,
+        p.provider === 'mapillary' &&
+          h(
+            'a',
+            {
+              href: `https://www.mapillary.com/app/?pKey=${p.imageId}`,
+              target: '_blank',
+              rel: 'noopener',
+            },
+            ' · otevřít v Mapillary',
+          ),
       ),
       h('div', { class: 'ed-pano-wrap' }, panoEl),
       h(
@@ -274,10 +279,12 @@ export function renderEditor(
             class: 'btn',
             type: 'button',
             onclick: async () => {
-              const v = await viewer?.getView?.();
+              const v = await viewer?.getView?.().catch(() => null);
               if (!v) return;
               update({
-                view: { center: [round3(v.center[0]), round3(v.center[1])], zoom: round3(v.zoom) },
+                view: isMapyView(v)
+                  ? { yaw: round3(v.yaw), pitch: round3(v.pitch), fov: round3(v.fov) }
+                  : { center: [round3(v.center[0]), round3(v.center[1])], zoom: round3(v.zoom) },
               });
               statusEl.textContent =
                 'Výchozí výhled uložen. Vodítka musí odpovídat tomuto výhledu.';
@@ -347,17 +354,70 @@ export function renderEditor(
     const results = h('div', { class: 'ed-results' });
     const msg = h('p', { class: 'field-note', role: 'status' });
 
-    const add = async (imageId: string, pos?: LatLng) => {
+    const needTitle = (): string | null => {
       const t = titleInput.value.trim();
       if (!t) {
         msg.textContent = 'Nejdřív napiš název místa.';
         titleInput.focus();
+        return null;
+      }
+      return t;
+    };
+    const parseCoords = (): LatLng | null => {
+      const [lat, lng] = coordInput.value.match(/-?\d+(?:\.\d+)?/g)?.map(Number) ?? [];
+      if (lat === undefined || lng === undefined) {
+        msg.textContent = 'Zadej šířku a délku, např. 50.0865, 14.4114.';
+        return null;
+      }
+      return { lat, lng };
+    };
+    const push = (place: Omit<LearningPlace, 'id' | 'title' | 'hints' | 'status'>, t: string) => {
+      const full: LearningPlace = {
+        id: uniqueId(slug(t), file.places),
+        title: t,
+        hints: [],
+        status: 'draft',
+        ...place,
+      };
+      file.places.push(full);
+      selectedId = full.id;
+      addDialog.hidden = true;
+      save();
+      renderAll();
+    };
+    const addMapy = async () => {
+      const t = needTitle();
+      const c = parseCoords();
+      if (!t || !c) return;
+      if (!mapy.isConfigured()) {
+        msg.textContent = 'Chybí klíč Mapy.com.';
         return;
       }
+      msg.textContent = 'Hledám panorama Mapy.com do 100 m...';
+      const info = await mapy.panoInfo(c, 100);
+      if (!info?.exists || !info.position) {
+        msg.textContent = info ? 'Mapy.com tu panorama nemají.' : 'Hledání se nepodařilo.';
+        return;
+      }
+      const d = Math.round(haversineKm(c, info.position) * 1000);
+      push(
+        {
+          provider: 'mapy',
+          position: { lat: round6(info.position.lat), lng: round6(info.position.lng) },
+          view: { yaw: 0, pitch: 0, fov: 1.2 },
+          note: `Panorama Mapy.com ${d} m od zadaného bodu.`,
+        },
+        t,
+      );
+    };
+
+    const add = async (imageId: string, pos?: LatLng) => {
+      const t = needTitle();
+      if (!t) return;
       let position = pos;
       if (!position) {
         msg.textContent = 'Ověřuju snímek...';
-        const info = await provider.imageInfo(imageId);
+        const info = await mapillary.imageInfo(imageId);
         if (!info?.exists || !info.position) {
           msg.textContent = 'Snímek se nepodařilo najít.';
           return;
@@ -368,21 +428,7 @@ export function renderEditor(
         }
         position = info.position;
       }
-      const place: LearningPlace = {
-        id: uniqueId(slug(t), file.places),
-        title: t,
-        provider: 'mapillary',
-        imageId,
-        position,
-        view: { center: [0.5, 0.5], zoom: 0 },
-        hints: [],
-        status: 'draft',
-      };
-      file.places.push(place);
-      selectedId = place.id;
-      addDialog.hidden = true;
-      save();
-      renderAll();
+      push({ provider: 'mapillary', imageId, position, view: { center: [0.5, 0.5], zoom: 0 } }, t);
     };
 
     addDialog.replaceChildren(
@@ -408,15 +454,11 @@ export function renderEditor(
           class: 'ed-row',
           onsubmit: async (e: Event) => {
             e.preventDefault();
-            const nums = coordInput.value.match(/-?\d+(?:\.\d+)?/g)?.map(Number) ?? [];
-            const [lat, lng] = nums;
-            if (lat === undefined || lng === undefined) {
-              msg.textContent = 'Zadej šířku a délku, např. 50.0865, 14.4114.';
-              return;
-            }
-            msg.textContent = 'Hledám 360° snímky v okolí (asi 150 m)...';
+            const c = parseCoords();
+            if (!c) return;
+            msg.textContent = 'Hledám 360° snímky Mapillary v okolí (asi 150 m)...';
             try {
-              const found = await provider.nearby({ lat, lng });
+              const found = await mapillary.nearby(c);
               msg.textContent = found.length
                 ? `Nalezeno ${found.length}. Vyber snímek.`
                 : 'V okolí nejsou žádné 360° snímky.';
@@ -430,6 +472,11 @@ export function renderEditor(
         },
         coordInput,
         h('button', { class: 'btn', type: 'submit' }, 'Najít v okolí'),
+        h(
+          'button',
+          { class: 'btn', type: 'button', onclick: () => void addMapy() },
+          'Přidat z Mapy.com',
+        ),
       ),
       msg,
       results,
@@ -558,6 +605,7 @@ function resultCard(f: NearbyImage, onAdd: () => void): HTMLElement {
 }
 
 const round3 = (x: number | undefined) => Math.round((x ?? 0) * 1000) / 1000;
+const round6 = (x: number) => Math.round(x * 1e6) / 1e6;
 
 function slug(s: string): string {
   return (

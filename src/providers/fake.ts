@@ -56,6 +56,10 @@ export class FakeProvider implements PanoramaProvider {
     return { exists: true, isPano: true, position: place?.position ?? { lat: 50, lng: 14 } };
   }
 
+  async panoInfo(p: { lat: number; lng: number }) {
+    return { exists: true, isPano: true, position: p };
+  }
+
   async nearby(p: { lat: number; lng: number }) {
     return [
       {
