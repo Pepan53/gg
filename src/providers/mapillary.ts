@@ -98,6 +98,20 @@ export function pickPano(
   };
 }
 
+export interface ImageInfo {
+  exists: boolean;
+  isPano?: boolean;
+  position?: LatLng | null;
+}
+
+export interface NearbyImage {
+  id: string;
+  position: LatLng;
+  thumbUrl?: string;
+  capturedAt?: number;
+  creator?: string;
+}
+
 export class MapillaryProvider implements PanoramaProvider {
   readonly id = 'mapillary' as const;
   readonly attribution = { label: 'Mapillary (CC BY-SA)', url: 'https://www.mapillary.com' };
@@ -133,6 +147,69 @@ export class MapillaryProvider implements PanoramaProvider {
       if (e instanceof ProviderError || (e as Error).name === 'AbortError') throw e;
       throw new ProviderError('Nepodařilo se spojit s Mapillary.', 'network');
     }
+  }
+
+  /** Existuje snímek a kde je? null = nepodařilo se ověřit (síť). */
+  async imageInfo(imageId: string, signal?: AbortSignal): Promise<ImageInfo | null> {
+    const token = this.requireToken();
+    const params = new URLSearchParams({
+      access_token: token,
+      fields: 'id,is_pano,geometry,computed_geometry',
+    });
+    try {
+      const res = await this.fetchFn(
+        `${GRAPH}/${encodeURIComponent(imageId)}?${params.toString()}`,
+        {
+          signal,
+        },
+      );
+      if (res.status === 400 || res.status === 404) return { exists: false };
+      if (!res.ok) return null;
+      const body = (await res.json()) as ImageHit & { error?: unknown };
+      if (body.error || !body.id) return { exists: false };
+      return { exists: true, isPano: body.is_pano === true, position: hitPosition(body) };
+    } catch {
+      return null;
+    }
+  }
+
+  /** 360° snímky v okolí bodu (editor výukových míst). */
+  async nearby(p: LatLng, signal?: AbortSignal): Promise<NearbyImage[]> {
+    const token = this.requireToken();
+    const d = SEARCH_HALF_DEG * 1.5;
+    const params = new URLSearchParams({
+      access_token: token,
+      bbox: [p.lng - d, p.lat - d, p.lng + d, p.lat + d].map((v) => v.toFixed(6)).join(','),
+      is_pano: 'true',
+      fields: 'id,is_pano,geometry,computed_geometry,thumb_256_url,captured_at,creator',
+      limit: '40',
+    });
+    const res = await this.get(
+      `${GRAPH}/images?${params.toString()}`,
+      signal ?? new AbortController().signal,
+    );
+    if (!res.ok) throw new ProviderError('Hledání v Mapillary selhalo.', 'network');
+    const body = (await res.json()) as {
+      data?: (ImageHit & {
+        thumb_256_url?: string;
+        captured_at?: number;
+        creator?: { username?: string };
+      })[];
+    };
+    return (body.data ?? []).flatMap((h) => {
+      const pos = hitPosition(h);
+      return h.is_pano && pos
+        ? [
+            {
+              id: h.id,
+              position: pos,
+              thumbUrl: h.thumb_256_url,
+              capturedAt: h.captured_at,
+              creator: h.creator?.username,
+            },
+          ]
+        : [];
+    });
   }
 
   /** Výchozí bod hledání: v oblasti náhodně uvnitř území, jinak u některého z výchozích bodů. */
@@ -228,8 +305,14 @@ export class MapillaryProvider implements PanoramaProvider {
     });
     // Panorama načítáme jen přes moveTo (ne zároveň přes imageId v konstruktoru),
     // jinak druhý požadavek zruší první a moveTo skončí chybou CancelMapillaryError.
+    const applyView = () => {
+      if (!target.view) return;
+      viewer.setCenter(target.view.center);
+      viewer.setZoom(target.view.zoom);
+    };
     try {
       await viewer.moveTo(target.panoId);
+      applyView();
     } catch (e) {
       viewer.remove();
       if ((e as Error).name === 'CancelMapillaryError') {
@@ -242,6 +325,7 @@ export class MapillaryProvider implements PanoramaProvider {
         void viewer
           .moveTo(target.panoId)
           .then(() => {
+            if (target.view) return applyView();
             viewer.setZoom(0);
             viewer.setCenter([0.5, 0.5]);
           })
@@ -249,6 +333,10 @@ export class MapillaryProvider implements PanoramaProvider {
       },
       resize: () => viewer.resize(),
       destroy: () => viewer.remove(),
+      getView: async () => {
+        const [center, zoom] = await Promise.all([viewer.getCenter(), viewer.getZoom()]);
+        return { center: [center[0] ?? 0.5, center[1] ?? 0.5], zoom };
+      },
     };
   }
 }

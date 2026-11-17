@@ -13,6 +13,16 @@ export interface Target {
   heading?: number;
   /** Kód státu cíle (ISO 3166-1 alpha-2), jen v módu Země. */
   country?: string;
+  /** Počáteční výhled (výuková místa). */
+  view?: PanoView;
+  /** ID výukového místa (režim Učení). */
+  placeId?: string;
+}
+
+/** Výhled v panoramatu: střed obrazu (0..1, 0..1) a přiblížení (Mapillary). */
+export interface PanoView {
+  center: [number, number];
+  zoom: number;
 }
 
 /** Tip: bod na mapě, nebo stát (mód Země). */
@@ -64,6 +74,12 @@ export interface GameSettings {
   timeLimitSec: number;
   /** Jména hráčů, 1 až 6. */
   players: string[];
+  /** Počet kol (1 až 5), výchozí 5. Učení má méně, když není dost míst. */
+  rounds?: number;
+}
+
+export function roundsOf(state: { settings: GameSettings }): number {
+  return state.settings.rounds ?? ROUNDS_PER_GAME;
 }
 
 export interface GameState {
@@ -96,6 +112,12 @@ export function validateSettings(s: GameSettings): string | null {
   if (!Number.isInteger(s.timeLimitSec) || s.timeLimitSec < 0) return 'Neplatný časový limit.';
   if (s.players.length < 1 || s.players.length > MAX_PLAYERS) return 'Počet hráčů musí být 1 až 6.';
   if (s.players.some((p) => !p.trim())) return 'Každý hráč potřebuje jméno.';
+  if (
+    s.rounds !== undefined &&
+    (!Number.isInteger(s.rounds) || s.rounds < 1 || s.rounds > ROUNDS_PER_GAME)
+  ) {
+    return 'Neplatný počet kol.';
+  }
   const lower = s.players.map((p) => p.trim().toLowerCase());
   if (new Set(lower).size !== lower.length) return 'Jména hráčů se nesmí opakovat.';
   return null;
@@ -155,7 +177,7 @@ function begin(state: GameState, now: number): GameState {
  * hned, při více hráčích se nejdřív ukáže předávací obrazovka.
  */
 export function startRound(state: GameState, target: Target, now: number): GameState {
-  if (state.phase !== 'loading' || state.rounds.length >= ROUNDS_PER_GAME) return state;
+  if (state.phase !== 'loading' || state.rounds.length >= roundsOf(state)) return state;
   const round: Round = { target, turns: state.settings.players.map(emptyTurn) };
   const next: GameState = {
     ...state,
@@ -298,8 +320,22 @@ export function submitGuess(state: GameState, now: number): GameState {
 /** Z výsledku kola na další kolo, nebo na konec hry. */
 export function advance(state: GameState, now: number): GameState {
   if (state.phase !== 'result') return state;
-  const phase: Phase = state.rounds.length >= ROUNDS_PER_GAME ? 'finished' : 'loading';
+  const phase: Phase = state.rounds.length >= roundsOf(state) ? 'finished' : 'loading';
   return { ...state, phase, current: 0, updatedAt: now };
+}
+
+/**
+ * Hra končí dřív, než bylo plánováno (Učení: došla dostupná schválená místa).
+ * Odehraná kola zůstávají; počet kol se zkrátí na odehraná.
+ */
+export function finishEarly(state: GameState, now: number): GameState {
+  if (state.phase !== 'loading' || state.rounds.length === 0) return state;
+  return {
+    ...state,
+    settings: { ...state.settings, rounds: state.rounds.length },
+    phase: 'finished',
+    updatedAt: now,
+  };
 }
 
 export function playerTotal(state: GameState, player: number): number {

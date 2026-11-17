@@ -1,4 +1,4 @@
-import type { Target } from '../core/game';
+import type { PanoView, Target } from '../core/game';
 import type { RegionDef } from '../core/modes';
 
 export class ProviderError extends Error {
@@ -17,6 +17,8 @@ export interface PanoramaViewer {
   /** Přepočítá velikost po změně rozložení (složení Foldu, otočení). */
   resize(): void;
   destroy(): void;
+  /** Aktuální výhled (pro editor výukových míst), pokud ho poskytovatel umí zjistit. */
+  getView?(): Promise<PanoView>;
 }
 
 export interface PanoramaProvider {

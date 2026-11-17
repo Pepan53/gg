@@ -938,3 +938,213 @@ legend {
   margin: 0.75rem 0 0.25rem;
   font-size: 1.05rem;
 }
+
+/* vodítka výukového režimu */
+.hints {
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius);
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+}
+.hints h3 {
+  margin: 0 0 0.4rem;
+  font-size: 1rem;
+}
+.hints ul {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  line-height: 1.45;
+}
+
+/* ---------- správa výukových míst ---------- */
+.editor {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: calc(1rem + var(--safe-t)) 1rem calc(2rem + var(--safe-b));
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.ed-head h1 {
+  font-size: 1.6rem;
+}
+.ed-toolbar {
+  justify-content: flex-start;
+  margin-top: 0.5rem;
+}
+.ed-status {
+  margin: 0.5rem 0 0;
+  font-weight: 600;
+  color: var(--accent);
+}
+.ed-body {
+  display: grid;
+  gap: 1rem;
+}
+@media (min-width: 900px) {
+  .ed-body {
+    grid-template-columns: 300px 1fr;
+    align-items: start;
+  }
+}
+.ed-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.ed-item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+  padding: 0.6rem 0.8rem;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  font: inherit;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.ed-item[aria-current='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.ed-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+.ed-badge {
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: var(--bg);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.ed-badge--approved,
+.ed-badge--ok {
+  background: #dcfce7;
+  color: #166534;
+}
+.ed-badge--draft {
+  background: #fef9c3;
+  color: #854d0e;
+}
+.ed-badge--err {
+  background: #fef2f2;
+  color: #991b1b;
+}
+.ed-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  padding: 1rem;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.ed-detail h2 {
+  margin: 0;
+}
+.ed-pano-wrap {
+  position: relative;
+  height: min(55vh, 480px);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #0f172a;
+}
+.ed-actions {
+  justify-content: flex-start;
+}
+.ed-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-weight: 600;
+}
+.ed-field .input,
+.ed-hint {
+  font-weight: 400;
+}
+textarea.input {
+  padding: 0.6rem 0.9rem;
+  resize: vertical;
+  min-height: 3.2rem;
+  line-height: 1.4;
+}
+.ed-hints {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.ed-errors {
+  margin: 0;
+  padding: 0.6rem 1rem 0.6rem 2rem;
+  border-radius: 10px;
+  background: #fef2f2;
+  color: #991b1b;
+}
+.ed-review {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--line);
+}
+.ed-review .actions {
+  justify-content: flex-start;
+}
+.ed-danger {
+  color: var(--danger);
+}
+.ed-add {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+.ed-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.ed-row .input {
+  flex: 1 1 240px;
+}
+.ed-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.6rem;
+}
+.ed-result {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.ed-result img,
+.ed-noimg {
+  display: block;
+  width: 100%;
+  aspect-ratio: 2 / 1;
+  object-fit: cover;
+  background: var(--bg);
+}
+.ed-result figcaption {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.4rem;
+}
+.intro__foot a {
+  color: var(--accent);
+  font-weight: 600;
+}

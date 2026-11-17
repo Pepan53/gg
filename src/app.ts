@@ -7,11 +7,13 @@ import {
   currentRound,
   currentTurn,
   expireIfNeeded,
+  finishEarly,
   isMultiplayer,
   placeGuess,
   playerTotal,
   remainingMs,
   replaceTarget,
+  roundsOf,
   standings,
   startRound,
   submitGuess,
@@ -33,7 +35,14 @@ import {
   type RegionDef,
   type RegionId,
 } from './core/modes';
-import { newId } from './core/random';
+import {
+  judgeAvailability,
+  placeToTarget,
+  playablePlaces,
+  type LearningPlace,
+} from './core/places';
+import { newId, randomItem } from './core/random';
+import { publishedPlaces } from './learning/store';
 import { MAX_POINTS } from './core/scoring';
 import { clearGame, loadGame, saveGame } from './core/storage';
 import { env } from './env';
@@ -94,7 +103,16 @@ function savePrefs(p: Prefs): void {
   }
 }
 
+class NoMorePlaces extends Error {
+  constructor() {
+    super('Žádné další dostupné schválené výukové místo.');
+  }
+}
+
 function errorText(e: unknown): string {
+  if (e instanceof NoMorePlaces) {
+    return 'Žádné výukové místo teď není dostupné. Zkontroluj místa ve Správě výukových míst.';
+  }
   if (e instanceof ProviderError) return e.message;
   if (!navigator.onLine) return 'Jsi offline. Připoj se k internetu a zkus to znovu.';
   return 'Něco se pokazilo. Zkus to znovu.';
@@ -108,6 +126,9 @@ export class App {
   private abort: AbortController | null = null;
   /** Názvy míst jen v paměti, nikam se neukládají. */
   private placeNames = new Map<string, string | null>();
+  /** Výuková místa, která jsou v této relaci nedostupná (přeskočí se). */
+  private unavailablePlaces = new Set<string>();
+  private readonly places = playablePlaces(publishedPlaces());
   private readonly providers: Record<ProviderId, PanoramaProvider>;
 
   constructor(
@@ -122,7 +143,44 @@ export class App {
     window.addEventListener('offline', () => this.updateOffline());
   }
 
-  start(): void {
+  private editorCleanup: (() => void) | null = null;
+  private hashListening = false;
+
+  /** Správa výukových míst na adrese #sprava. */
+  private async openEditor(): Promise<void> {
+    for (const c of this.cleanups.splice(0)) c();
+    this.root.replaceChildren(
+      h('main', { class: 'screen center' }, h('div', { class: 'spinner' })),
+    );
+    const { renderEditor } = await import('./ui/editor');
+    this.editorCleanup = renderEditor(
+      this.root,
+      this.providers.mapillary as MapillaryProvider,
+      () => {
+        history.pushState(null, '', location.pathname);
+        this.closeEditor();
+      },
+    );
+  }
+
+  private closeEditor(): void {
+    this.editorCleanup?.();
+    this.editorCleanup = null;
+    this.start(true);
+  }
+
+  start(skipEditor = false): void {
+    if (!this.hashListening) {
+      this.hashListening = true;
+      window.addEventListener('hashchange', () => {
+        if (location.hash === '#sprava') void this.openEditor();
+        else if (this.editorCleanup) this.closeEditor();
+      });
+    }
+    if (!skipEditor && location.hash === '#sprava') {
+      void this.openEditor();
+      return;
+    }
     const saved = loadGame(Date.now());
     if (saved && saved.phase !== 'finished') {
       this.setState(expireIfNeeded(saved, Date.now()));
@@ -390,14 +448,20 @@ export class App {
       // Typ hry dostupný jen pro některé oblasti.
       for (const label of form.querySelectorAll<HTMLLabelElement>('[data-type]')) {
         const id = label.dataset['type'] as GameType;
-        const allowed = GAME_TYPES[id].regions.includes(prefs.region);
+        const inRegion = GAME_TYPES[id].regions.includes(prefs.region);
+        const hasPlaces = id !== 'learning' || this.places.length > 0;
+        const allowed = inRegion && hasPlaces;
         const input = label.querySelector('input') as HTMLInputElement;
         input.disabled = !allowed;
         label.classList.toggle('choice--disabled', !allowed);
         const note = label.querySelector<HTMLElement>('.choice__note');
         if (note) {
           note.hidden = allowed;
-          note.textContent = allowed ? '' : 'Jen v oblasti Svět.';
+          note.textContent = allowed
+            ? ''
+            : !inRegion
+              ? 'Jen v oblasti Svět.'
+              : 'Zatím žádné schválené místo. Schval místa ve Správě výukových míst.';
         }
         if (!allowed && input.checked) {
           input.checked = false;
@@ -429,6 +493,8 @@ export class App {
         grayscale: prefs.grayscale,
         timeLimitSec: prefs.timeLimitSec,
         players: prefs.multi ? prefs.players.map((p) => p.trim()) : ['Ty'],
+        rounds:
+          prefs.type === 'learning' ? Math.min(ROUNDS_PER_GAME, this.places.length) : undefined,
       };
       const err = validateSettings(settings);
       errorEl.hidden = !err;
@@ -459,7 +525,7 @@ export class App {
           h(
             'p',
             {},
-            `Máš rozehranou hru (${REGIONS[resumable.settings.region].name}, ${GAME_TYPES[resumable.settings.type].name}, kolo ${Math.max(1, resumable.rounds.length)} z ${ROUNDS_PER_GAME}).`,
+            `Máš rozehranou hru (${REGIONS[resumable.settings.region].name}, ${GAME_TYPES[resumable.settings.type].name}, kolo ${Math.max(1, resumable.rounds.length)} z ${roundsOf(resumable)}).`,
           ),
           h(
             'button',
@@ -491,7 +557,8 @@ export class App {
       h(
         'footer',
         { class: 'intro__foot' },
-        'Panoramata: Mapillary (CC BY-SA) a Mapy.com. Mapa: OpenFreeMap, © přispěvatelé OpenStreetMap. Hranice států: Natural Earth.',
+        'Panoramata: Mapillary (CC BY-SA) a Mapy.com. Mapa: OpenFreeMap, © přispěvatelé OpenStreetMap. Hranice států: Natural Earth. ',
+        h('a', { href: '#sprava' }, 'Správa výukových míst'),
       ),
     );
     this.mount(screen);
@@ -511,8 +578,32 @@ export class App {
   // ---------- načítání kola ----------
 
   /** Najde panorama; v módu Země jen takové, které leží v některém státě. */
+  /** Další dostupné schválené výukové místo, které se v této hře ještě nehrálo. */
+  private async nextLearningTarget(signal: AbortSignal): Promise<Target> {
+    const used = new Set(this.state?.rounds.map((r) => r.target.placeId));
+    const mapillary = this.providers.mapillary as Partial<MapillaryProvider>;
+    for (;;) {
+      const candidates = this.places.filter(
+        (p) => !used.has(p.id) && !this.unavailablePlaces.has(p.id),
+      );
+      const place = randomItem(candidates);
+      if (!place) throw new NoMorePlaces();
+      if (typeof mapillary.imageInfo !== 'function') return placeToTarget(place);
+      const info = await mapillary.imageInfo.call(this.providers.mapillary, place.imageId, signal);
+      const a = judgeAvailability(place, info);
+      if (a.ok) return placeToTarget(place);
+      if (!a.ok && a.reason === 'network') {
+        throw new ProviderError('Nepodařilo se ověřit výukové místo. Zkus to znovu.', 'network');
+      }
+      // Nedostupné nebo posunuté místo se do hry nezařadí, dokud ho někdo nezkontroluje.
+      this.unavailablePlaces.add(place.id);
+      used.add(place.id);
+    }
+  }
+
   private async findTarget(signal: AbortSignal): Promise<Target> {
     const settings = this.state?.settings;
+    if (settings?.type === 'learning') return this.nextLearningTarget(signal);
     if (settings?.type !== 'country') return this.provider().findRandom(this.region(), signal);
     const countries = await loadCountries();
     for (let i = 0; i < COUNTRY_RETRIES; i++) {
@@ -534,7 +625,7 @@ export class App {
     const screen = h(
       'main',
       { class: 'screen center' },
-      h('h2', { tabindex: -1 }, `Kolo ${state.rounds.length + 1} z ${ROUNDS_PER_GAME}`),
+      h('h2', { tabindex: -1 }, `Kolo ${state.rounds.length + 1} z ${roundsOf(state)}`),
       h('div', { class: 'spinner', 'aria-hidden': 'true' }),
       status,
       actions,
@@ -549,6 +640,11 @@ export class App {
       this.route();
     } catch (e) {
       if (ctrl.signal.aborted) return;
+      if (e instanceof NoMorePlaces && state.rounds.length > 0) {
+        // Došla dostupná místa: hra skončí s odehranými koly.
+        this.setState(finishEarly(state, Date.now()));
+        return this.route();
+      }
       screen.querySelector('.spinner')?.remove();
       status.textContent = errorText(e);
       status.setAttribute('role', 'alert');
@@ -584,7 +680,7 @@ export class App {
           'aria-modal': 'true',
           'aria-labelledby': 'gate-title',
         },
-        h('p', { class: 'handoff__round' }, `Kolo ${state.rounds.length} z ${ROUNDS_PER_GAME}`),
+        h('p', { class: 'handoff__round' }, `Kolo ${state.rounds.length} z ${roundsOf(state)}`),
         h(
           'span',
           {
@@ -702,7 +798,7 @@ export class App {
             { class: 'hud__player', style: `box-shadow: inset 4px 0 0 ${color}` },
             settings.players[state.current] ?? '',
           ),
-        h('span', {}, h('small', {}, 'Kolo '), `${state.rounds.length}/${ROUNDS_PER_GAME}`),
+        h('span', {}, h('small', {}, 'Kolo '), `${state.rounds.length}/${roundsOf(state)}`),
         h('span', {}, h('small', {}, 'Body '), formatPoints(playerTotal(state, state.current))),
         limitSec > 0 && timerEl,
         settings.grayscale &&
@@ -942,6 +1038,8 @@ export class App {
       }
     };
     const swapLocation = async () => {
+      const failedPlace = this.state && currentRound(this.state)?.target.placeId;
+      if (failedPlace) this.unavailablePlaces.add(failedPlace);
       panoOverlay.replaceChildren(h('div', { class: 'spinner' }), 'Hledám jiné místo...');
       try {
         const ctrl = new AbortController();
@@ -1001,7 +1099,26 @@ export class App {
 
   // ---------- výsledek kola ----------
 
+  private placeOf(round: Round): LearningPlace | undefined {
+    const id = round.target.placeId;
+    return id ? this.places.find((p) => p.id === id) : undefined;
+  }
+
+  /** Vodítka výukového místa, zobrazují se až po vyhodnocení kola. */
+  private hintsEl(round: Round): HTMLElement | null {
+    const place = this.placeOf(round);
+    if (!place) return null;
+    return h(
+      'section',
+      { class: 'hints', 'aria-labelledby': 'hints-title' },
+      h('h3', { id: 'hints-title' }, 'Podle čeho šlo místo poznat'),
+      h('ul', {}, ...place.hints.filter((x) => x.trim()).map((x) => h('li', {}, x))),
+    );
+  }
+
   private placeNameEl(round: Round): HTMLElement {
+    const curated = this.placeOf(round);
+    if (curated) return h('span', {}, curated.title);
     const el = h('span', {}, 'Zjišťuju název místa...');
     const key = round.target.panoId;
     const show = (name: string | null) => (el.textContent = name ?? PLACE_NAME_UNAVAILABLE);
@@ -1048,7 +1165,7 @@ export class App {
     const multi = isMultiplayer(state);
     const countryMode = settings.type === 'country';
     const countdown = settings.type === 'countdown';
-    const last = state.rounds.length >= ROUNDS_PER_GAME;
+    const last = state.rounds.length >= roundsOf(state);
     const targetCountry = round.target.country;
 
     const mapEl = h('div', {
@@ -1187,7 +1304,7 @@ export class App {
       h(
         'section',
         { class: 'result__panel' },
-        h('h2', { tabindex: -1 }, `Kolo ${state.rounds.length} z ${ROUNDS_PER_GAME}`),
+        h('h2', { tabindex: -1 }, `Kolo ${state.rounds.length} z ${roundsOf(state)}`),
         body,
         countryMode &&
           multi &&
@@ -1198,6 +1315,7 @@ export class App {
             countries?.nameOf(targetCountry ?? '') ?? '',
           ),
         h('p', { class: 'place' }, h('small', {}, 'Místo: '), this.placeNameEl(round)),
+        this.hintsEl(round),
         h(
           'p',
           { class: 'legend' },
@@ -1304,7 +1422,7 @@ export class App {
   private renderFinalWith(state: GameState, countries: CountryIndex | null): void {
     const settings = state.settings;
     const multi = isMultiplayer(state);
-    const max = MAX_POINTS * ROUNDS_PER_GAME;
+    const max = MAX_POINTS * roundsOf(state);
     /** Hráč rozkliknutý v pořadí (víc hráčů), null = přehled všech. */
     let selected: number | null = multi ? null : 0;
 

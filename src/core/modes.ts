@@ -72,7 +72,7 @@ export const REGIONS: Record<RegionId, RegionDef> = {
 
 // ---------- typy hry ----------
 
-export type GameType = 'classic' | 'countdown' | 'country';
+export type GameType = 'classic' | 'countdown' | 'country' | 'learning';
 
 export interface GameTypeDef {
   id: GameType;
@@ -105,6 +105,13 @@ export const GAME_TYPES: Record<GameType, GameTypeDef> = {
     id: 'country',
     name: 'Země',
     rules: 'Klikni do mapy na stát, ve kterém jsi. Správný stát je za 5 000 bodů, jiný za 0.',
+    regions: ['world'],
+  },
+  learning: {
+    id: 'learning',
+    name: 'Učení',
+    rules:
+      'Ručně vybraná místa. Hraje se jako Klasika a po každém kole uvidíš 2 až 3 vodítka, podle kterých šlo místo poznat.',
     regions: ['world'],
   },
 };

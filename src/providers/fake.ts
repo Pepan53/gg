@@ -1,5 +1,6 @@
 import type { Target } from '../core/game';
 import type { RegionDef } from '../core/modes';
+import fixture from '../data/learning-places.e2e.json';
 import type { PanoramaProvider, PanoramaViewer } from './types';
 
 /**
@@ -46,6 +47,25 @@ export class FakeProvider implements PanoramaProvider {
     return { provider: this.id, panoId: `fake-${mode.id}-${this.n}`, position, heading: 0 };
   }
 
+  /** Náhrada kontroly dostupnosti: testovací snímky existují, kromě ID končícího 9. */
+  async imageInfo(imageId: string) {
+    if (imageId.endsWith('9')) return { exists: false };
+    const place = (
+      fixture.places as { imageId: string; position: { lat: number; lng: number } }[]
+    ).find((p) => p.imageId === imageId);
+    return { exists: true, isPano: true, position: place?.position ?? { lat: 50, lng: 14 } };
+  }
+
+  async nearby(p: { lat: number; lng: number }) {
+    return [
+      {
+        id: '100000000077',
+        position: { lat: p.lat + 0.0001, lng: p.lng },
+        capturedAt: Date.UTC(2024, 5, 1),
+      },
+    ];
+  }
+
   async createViewer(container: HTMLElement): Promise<PanoramaViewer> {
     const el = document.createElement('div');
     el.className = 'fake-pano';
@@ -55,6 +75,11 @@ export class FakeProvider implements PanoramaProvider {
       'background:linear-gradient(#7dd3fc 0 55%, #65a30d 55% 100%)';
     el.textContent = 'Testovací panorama';
     container.replaceChildren(el);
-    return { reset: () => undefined, resize: () => undefined, destroy: () => el.remove() };
+    return {
+      reset: () => undefined,
+      resize: () => undefined,
+      destroy: () => el.remove(),
+      getView: async () => ({ center: [0.25, 0.5] as [number, number], zoom: 0.5 }),
+    };
   }
 }

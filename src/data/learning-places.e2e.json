@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "places": [
+    {
+      "id": "test-praha",
+      "title": "Praha, Staroměstské náměstí (test)",
+      "provider": "mapillary",
+      "imageId": "100000000001",
+      "position": { "lat": 50.0875, "lng": 14.4213 },
+      "view": { "center": [0.5, 0.5], "zoom": 0 },
+      "hints": ["Testovací vodítko jedna.", "Testovací vodítko dvě."],
+      "status": "approved",
+      "reviewedBy": "test",
+      "reviewedAt": "2026-11-17"
+    },
+    {
+      "id": "test-pariz",
+      "title": "Paříž (test)",
+      "provider": "mapillary",
+      "imageId": "100000000002",
+      "position": { "lat": 48.8584, "lng": 2.2945 },
+      "view": { "center": [0.5, 0.5], "zoom": 0 },
+      "hints": ["První pařížské vodítko.", "Druhé pařížské vodítko.", "Třetí pařížské vodítko."],
+      "status": "approved",
+      "reviewedBy": "test",
+      "reviewedAt": "2026-11-17"
+    },
+    {
+      "id": "test-navrh",
+      "title": "Neschválený návrh (test)",
+      "provider": "mapillary",
+      "imageId": "100000000003",
+      "position": { "lat": 35.6586, "lng": 139.7454 },
+      "view": { "center": [0.5, 0.5], "zoom": 0 },
+      "hints": ["Návrh, nesmí se hrát.", "Návrh dva."],
+      "status": "draft"
+    }
+  ]
+}

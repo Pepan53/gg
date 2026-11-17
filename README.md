@@ -5,7 +5,7 @@ Hráč se rozhlédne po panoramatu, na mapě označí, kde si myslí, že je, a 
 
 **Hra:** https://pepan53.github.io/gg/
 
-**Stav:** fáze 2 (herní módy a hra více hráčů na jednom zařízení) ve **variantě A**: čistě
+**Stav:** fáze 3 (výukový režim s ručně vybranými místy), navazuje na fázi 2 (herní módy a hra více hráčů) ve **variantě A**: čistě
 statický web pro GitHub Pages, bez vlastního serveru a bez Googlu. Data jsou zdarma.
 
 ## Jak to funguje
@@ -155,6 +155,59 @@ místo mimo oblast**.
   (1., 1., 3.).
 - Předávací obrazovka zajišťuje soukromí jen organizačně. Tipy všech hráčů jsou uložené
   v prohlížeči (`localStorage`) a zvědavý hráč je tam najde.
+
+## Režim Učení a správa výukových míst
+
+**Hra:** typ hry **Učení** (oblast Svět). Hraje se jako Klasika, ale místo náhodných
+panoramat jen ručně vybraná a **schválená** místa, každé nejvýš jednou za hru. Po vyhodnocení
+kola se ukáže název místa a **2 až 3 vodítka**, podle kterých šlo místo poznat. Hra má
+5 kol, nebo méně, když je schválených míst méně.
+
+**Data:** `src/data/learning-places.json`. Každé místo má:
+
+| Pole                       | Význam                                                                    |
+| -------------------------- | ------------------------------------------------------------------------- |
+| `id`                       | naše stálé ID (malá písmena, číslice, pomlčky)                            |
+| `title`                    | název, hráč ho uvidí až po kole                                           |
+| `imageId`                  | ID 360° snímku Mapillary                                                  |
+| `position`                 | poloha snímku v době výběru                                               |
+| `view`                     | výchozí výhled (`center` 0..1, `zoom`), ke kterému se vztahují vodítka    |
+| `hints`                    | 2 až 3 stručná česká vodítka, jen co je ve výchozím výhledu opravdu vidět |
+| `status`                   | `draft` (návrh, nehraje se) nebo `approved` (ručně zkontrolováno)         |
+| `reviewedBy`, `reviewedAt` | kdo a kdy místo naposledy zkontroloval (u schváleného povinné)            |
+| `note`                     | poznámka pro správce                                                      |
+
+**Ukládání a licence:** u míst držíme jen ID snímku Mapillary, jeho polohu a výhled. Snímky
+jsou pod CC BY-SA, takže trvalé uložení ID a souřadnic je v pořádku. Samotné obrázky se
+neukládají, načítají se vždy z Mapillary. Mapy.com se pro výuková místa nepoužívají.
+
+**Kdy se místo nehraje:**
+
+- není schválené nebo nemá 2 až 3 vodítka,
+- snímek v Mapillary zmizel nebo už není 360°,
+- poloha snímku se oproti uložené posunula o víc než 50 m (vodítka by nemusela sedět).
+
+Hra to ověřuje těsně před kolem (dotaz na Mapillary). Nedostupné místo přeskočí a hraje
+další. Když dojdou všechna, hra skončí s odehranými koly a nezasekne se.
+
+**Správa (editor):** odkaz „Správa výukových míst“ dole na úvodní stránce, nebo
+`https://pepan53.github.io/gg/#sprava`.
+
+1. **Přidat místo:** název a buď ID či odkaz snímku z mapillary.com, nebo souřadnice
+   a „Najít v okolí“ (360° snímky v okolí ~300 m s náhledem).
+2. Natoč panorama, aby bylo vidět to podstatné, a dej **Uložit tento výhled jako výchozí**.
+3. Napiš 2 až 3 vodítka. Jen to, co je ve výchozím výhledu opravdu vidět, žádná neověřená
+   tvrzení. Každá úprava vrátí místo mezi návrhy.
+4. **Kontrola:** otevři místo, porovnej vodítka s panoramatem, napiš své jméno
+   a dej **Zkontroloval jsem, schválit**. Schválení ověří i dostupnost snímku.
+5. **Stáhnout JSON** a soubor nahraj do repozitáře jako `src/data/learning-places.json`
+   (na GitHubu: složka `src/data` → Add file → Upload files → Commit). Po nasazení
+   (asi 2 minuty) se změna projeví ve hře.
+
+Změny v editoru se do té doby ukládají jen v prohlížeči (`localStorage`) a ostatní je nevidí.
+Editor je veřejně dostupný, ale nic nezveřejní. Zveřejnit jde jen nahráním souboru do
+repozitáře. **Pravidelná kontrola:** jednou za čas otevři editor a dej „Ověřit dostupnost
+všech“; nedostupná místa oprav (nový snímek přes Najít v okolí) nebo smaž.
 
 ## Data, atribuce a licence
 

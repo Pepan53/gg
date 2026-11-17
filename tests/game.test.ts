@@ -7,6 +7,7 @@ import {
   currentRound,
   currentTurn,
   expireIfNeeded,
+  finishEarly,
   placeGuess,
   playerTotal,
   remainingMs,
@@ -287,5 +288,31 @@ describe('uložení a obnovení stavu', () => {
     store.setItem('gg.game.v1', '{}');
     loadGame(0, store);
     expect(store.getItem('gg.game.v1')).toBeNull();
+  });
+});
+
+describe('počet kol a předčasný konec', () => {
+  it('hra může mít méně kol', () => {
+    let s = createGame(settings({ rounds: 2 }), 0, 'g');
+    for (let i = 0; i < 2; i++) {
+      s = startRound(s, target(`p${i}`), i);
+      s = advance(submitGuess(placeGuess(s, HIT, i), i), i);
+    }
+    expect(s.phase).toBe('finished');
+  });
+
+  it('předčasný konec zkrátí hru na odehraná kola', () => {
+    let s = createGame(settings(), 0, 'g');
+    s = startRound(s, target(), 0);
+    s = advance(submitGuess(placeGuess(s, HIT, 1), 2), 3);
+    s = finishEarly(s, 4);
+    expect(s.phase).toBe('finished');
+    expect(s.settings.rounds).toBe(1);
+    expect(finishEarly(createGame(settings(), 0, 'g'), 1).phase).toBe('loading');
+  });
+
+  it('odmítne nesmyslný počet kol', () => {
+    expect(validateSettings(settings({ rounds: 0 }))).not.toBeNull();
+    expect(validateSettings(settings({ rounds: 6 }))).not.toBeNull();
   });
 });

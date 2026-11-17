@@ -347,3 +347,69 @@ test('Víc hráčů: stejná jména nejdou', async ({ page }) => {
   await expect(page.getByRole('textbox')).toHaveCount(6);
   await expect(page.getByRole('button', { name: '+ Přidat hráče' })).toBeHidden();
 });
+
+// ---------- fáze 3 ----------
+
+test('Učení: hrají se jen schválená místa a po kole se ukážou vodítka', async ({ page }) => {
+  test.skip(!['desktop', 'mobil', 'fold-zavreny'].includes(test.info().project.name));
+  await offline(page);
+  await page.goto('/');
+  await page.getByRole('radio', { name: /^Učení / }).check();
+  await page.getByRole('button', { name: 'Hrát' }).click();
+  // Testovací data mají 2 schválená místa a 1 návrh, hra má tedy 2 kola.
+  const titles: string[] = [];
+  for (let i = 1; i <= 2; i++) {
+    await expect(page.locator('.hud')).toContainText(`${i}/2`);
+    await guess(page);
+    await expect(page.locator('.hints')).toContainText('Podle čeho šlo místo poznat');
+    const n = await page.locator('.hints li').count();
+    expect(n).toBeGreaterThanOrEqual(2);
+    expect(n).toBeLessThanOrEqual(3);
+    titles.push((await page.locator('.place').textContent()) ?? '');
+    await page.getByRole('button', { name: i < 2 ? 'Další kolo' : 'Celkový výsledek' }).click();
+  }
+  expect(titles.join()).not.toContain('Neschválený');
+  await expect(page.locator('.bigscore')).toContainText('z 10 000 bodů');
+});
+
+test('Správa míst: úprava vrátí místo mezi návrhy, schválení chce jméno, export JSON', async ({
+  page,
+}) => {
+  test.skip(test.info().project.name !== 'desktop');
+  await offline(page);
+  await page.goto('/#sprava');
+  await expect(page.getByRole('heading', { name: 'Správa výukových míst' })).toBeVisible();
+  await expect(page.locator('.ed-item')).toHaveCount(3);
+  await page.locator('.ed-item', { hasText: 'Praha' }).click();
+  await expect(page.getByTestId('fake-pano')).toBeVisible();
+  await page.getByRole('textbox', { name: 'Vodítko 3' }).fill('Nové vodítko k výhledu.');
+  await expect(page.locator('.ed-item', { hasText: 'Praha' })).toContainText('Návrh');
+  await page.getByRole('button', { name: 'Uložit tento výhled jako výchozí' }).click();
+  await page.getByPlaceholder('Tvoje jméno').fill('');
+  await page.getByRole('button', { name: 'Zkontroloval jsem, schválit' }).click();
+  await expect(page.locator('.ed-status')).toContainText('napiš, kdo');
+  await page.getByPlaceholder('Tvoje jméno').fill('Pepa');
+  await page.getByRole('button', { name: 'Zkontroloval jsem, schválit' }).click();
+  await expect(page.locator('.ed-status')).toContainText('Schváleno (Pepa');
+  const json = await page.evaluate(() =>
+    (window as unknown as { ggPlacesJson: () => string }).ggPlacesJson(),
+  );
+  const praha = JSON.parse(json).places.find((p: { id: string }) => p.id === 'test-praha');
+  expect(praha).toMatchObject({
+    status: 'approved',
+    reviewedBy: 'Pepa',
+    view: { center: [0.25, 0.5], zoom: 0.5 },
+  });
+  expect(praha.hints).toHaveLength(3);
+  // Přidání místa přes hledání v okolí
+  await page.getByRole('button', { name: 'Přidat místo' }).click();
+  await page.getByPlaceholder('Např. Praha, Karlův most').fill('Brno, náměstí Svobody');
+  await page.getByPlaceholder('Souřadnice').fill('49.1951, 16.6081');
+  await page.getByRole('button', { name: 'Najít v okolí' }).click();
+  await page.locator('.ed-result').getByRole('button', { name: 'Přidat' }).click();
+  await expect(page.locator('.ed-item')).toHaveCount(4);
+  await expect(page.locator('.ed-detail h2')).toContainText('Brno, náměstí Svobody');
+  // Zpět do hry
+  await page.getByRole('button', { name: 'Zpět do hry' }).click();
+  await expect(page.getByRole('heading', { name: 'Kde na světě jsem?' })).toBeVisible();
+});
