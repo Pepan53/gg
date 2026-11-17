@@ -194,7 +194,7 @@ další. Když dojdou všechna, hra skončí s odehranými koly a nezasekne se.
 `https://pepan53.github.io/gg/#sprava`.
 
 1. **Přidat místo:** název a buď ID či odkaz snímku z mapillary.com, nebo souřadnice
-   a „Najít v okolí“ (360° snímky v okolí ~300 m s náhledem).
+   a „Najít v okolí“ (360° snímky v okolí ~150 m s náhledem, seřazené od nejbližšího).
 2. Natoč panorama, aby bylo vidět to podstatné, a dej **Uložit tento výhled jako výchozí**.
 3. Napiš 2 až 3 vodítka. Jen to, co je ve výchozím výhledu opravdu vidět, žádná neověřená
    tvrzení. Každá úprava vrátí místo mezi návrhy.

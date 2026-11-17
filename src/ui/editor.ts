@@ -414,7 +414,7 @@ export function renderEditor(
               msg.textContent = 'Zadej šířku a délku, např. 50.0865, 14.4114.';
               return;
             }
-            msg.textContent = 'Hledám 360° snímky v okolí (asi 300 m)...';
+            msg.textContent = 'Hledám 360° snímky v okolí (asi 150 m)...';
             try {
               const found = await provider.nearby({ lat, lng });
               msg.textContent = found.length

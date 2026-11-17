@@ -1,7 +1,7 @@
 import { VectorTile } from '@mapbox/vector-tile';
 import { PbfReader } from 'pbf';
 import type { Target } from '../core/game';
-import { isValidLatLng, type LatLng } from '../core/geo';
+import { haversineKm, isValidLatLng, type LatLng } from '../core/geo';
 import type { RegionArea, RegionDef } from '../core/modes';
 import { pointInGeometry } from '../core/polygon';
 import { defaultRng, randomBetween, randomItem, type Rng } from '../core/random';
@@ -110,6 +110,8 @@ export interface NearbyImage {
   thumbUrl?: string;
   capturedAt?: number;
   creator?: string;
+  /** Vzdálenost od hledaného bodu, m. */
+  distanceM: number;
 }
 
 export class MapillaryProvider implements PanoramaProvider {
@@ -176,7 +178,7 @@ export class MapillaryProvider implements PanoramaProvider {
   /** 360° snímky v okolí bodu (editor výukových míst). */
   async nearby(p: LatLng, signal?: AbortSignal): Promise<NearbyImage[]> {
     const token = this.requireToken();
-    const d = SEARCH_HALF_DEG * 1.5;
+    const d = SEARCH_HALF_DEG * 0.6;
     const params = new URLSearchParams({
       access_token: token,
       bbox: [p.lng - d, p.lat - d, p.lng + d, p.lat + d].map((v) => v.toFixed(6)).join(','),
@@ -196,20 +198,24 @@ export class MapillaryProvider implements PanoramaProvider {
         creator?: { username?: string };
       })[];
     };
-    return (body.data ?? []).flatMap((h) => {
-      const pos = hitPosition(h);
-      return h.is_pano && pos
-        ? [
-            {
-              id: h.id,
-              position: pos,
-              thumbUrl: h.thumb_256_url,
-              capturedAt: h.captured_at,
-              creator: h.creator?.username,
-            },
-          ]
-        : [];
-    });
+    return (body.data ?? [])
+      .flatMap((h) => {
+        const pos = hitPosition(h);
+        return h.is_pano && pos
+          ? [
+              {
+                id: h.id,
+                position: pos,
+                thumbUrl: h.thumb_256_url,
+                capturedAt: h.captured_at,
+                creator: h.creator?.username,
+                distanceM: Math.round(haversineKm(p, pos) * 1000),
+              },
+            ]
+          : [];
+      })
+      .sort((a, b) => a.distanceM - b.distanceM)
+      .slice(0, 40);
   }
 
   /** Výchozí bod hledání: v oblasti náhodně uvnitř území, jinak u některého z výchozích bodů. */
