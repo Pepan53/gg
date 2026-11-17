@@ -169,7 +169,6 @@ export class MapillaryProvider implements PanoramaProvider {
     const viewer = new Viewer({
       accessToken: token,
       container,
-      imageId: target.panoId,
       component: {
         cover: false,
         sequence: false,
@@ -183,10 +182,15 @@ export class MapillaryProvider implements PanoramaProvider {
         keyboard: { keyPlay: false, keySequenceNavigation: false, keySpatialNavigation: true },
       },
     });
+    // Panorama načítáme jen přes moveTo (ne zároveň přes imageId v konstruktoru),
+    // jinak druhý požadavek zruší první a moveTo skončí chybou CancelMapillaryError.
     try {
       await viewer.moveTo(target.panoId);
-    } catch {
+    } catch (e) {
       viewer.remove();
+      if ((e as Error).name === 'CancelMapillaryError') {
+        throw new ProviderError('Načítání panoramatu bylo přerušeno. Zkus to znovu.', 'network');
+      }
       throw new ProviderError('Panorama teď není dostupné.', 'unavailable');
     }
     return {
