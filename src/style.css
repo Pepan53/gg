@@ -1149,3 +1149,9 @@ textarea.input {
   color: var(--accent);
   font-weight: 600;
 }
+
+/* Atribuce v panoramatu bez prokliku (proti prozrazení polohy) */
+.pano a.pano-unlinked {
+  pointer-events: none;
+  cursor: default;
+}

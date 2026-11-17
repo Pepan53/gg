@@ -1067,6 +1067,24 @@ export class App {
       }
     };
     this.cleanups.push(() => viewer?.destroy());
+    // Odkazy v panoramatu (atribuce, logo) vedou na stránky poskytovatele i s polohou.
+    // Text atribuce necháváme viditelný, jen bez prokliku.
+    const unlink = () => {
+      for (const a of panoEl.querySelectorAll<HTMLAnchorElement>('a[href]')) {
+        a.removeAttribute('href');
+        a.removeAttribute('target');
+        a.setAttribute('tabindex', '-1');
+        a.classList.add('pano-unlinked');
+      }
+    };
+    const mo = new MutationObserver(unlink);
+    mo.observe(panoEl, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ['href'],
+    });
+    this.cleanups.push(() => mo.disconnect());
     void showPano();
 
     // --- velikost (otočení, složení a rozložení Foldu) ---

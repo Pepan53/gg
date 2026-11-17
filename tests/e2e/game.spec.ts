@@ -37,10 +37,14 @@ async function openMap(page: Page) {
 
 async function guess(page: Page, dx = 0, dy = 0) {
   const canvas = await openMap(page);
-  const box = await canvas.boundingBox();
-  if (!box) throw new Error('mapa nemá rozměr');
-  await page.mouse.click(box.x + box.width / 2 + dx, box.y + box.height / 2 + dy);
   const confirm = page.getByRole('button', { name: 'Potvrdit tip' });
+  // Při souběžném běhu testů se mapa může dokreslovat; klik případně zopakujeme.
+  for (let attempt = 0; attempt < 3 && !(await confirm.isEnabled()); attempt++) {
+    const box = await canvas.boundingBox();
+    if (!box) throw new Error('mapa nemá rozměr');
+    await page.mouse.click(box.x + box.width / 2 + dx, box.y + box.height / 2 + dy);
+    await page.waitForTimeout(300);
+  }
   await expect(confirm).toBeEnabled();
   await confirm.click();
 }
@@ -172,9 +176,15 @@ test('potvrzení je dostupné až po umístění špendlíku a dvojí odeslání
   const confirm = page.getByRole('button', { name: 'Potvrdit tip' });
   await confirm.dblclick();
   await expect(page.getByRole('heading', { name: 'Kolo 1 z 5' })).toBeVisible();
-  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('gg.game.v2') ?? '{}'));
+  const saved = await page.evaluate(() =>
+    (
+      window as unknown as {
+        ggState: () => { rounds: { turns: { result: Record<string, number> }[] }[]; phase: string };
+      }
+    ).ggState(),
+  );
   expect(saved.rounds).toHaveLength(1);
-  expect(saved.rounds[0].turns).toHaveLength(1);
+  expect(saved.rounds[0]?.turns).toHaveLength(1);
   expect(saved.phase).toBe('result');
 });
 
@@ -242,11 +252,18 @@ test('Countdown: 30 s na tah a body násobené zbývajícím časem', async ({ p
   await clickLngLat(page, 14.4213, 50.0875);
   await page.getByRole('button', { name: 'Potvrdit tip' }).click();
   await expect(page.locator('.result__panel')).toContainText('za čas');
-  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('gg.game.v2') ?? '{}'));
-  const r = saved.rounds[0].turns[0].result;
-  expect(r.multiplier).toBeGreaterThan(0.3);
-  expect(r.multiplier).toBeLessThan(0.55);
-  expect(r.points).toBe(Math.round(r.basePoints * r.multiplier));
+  const saved = await page.evaluate(() =>
+    (
+      window as unknown as {
+        ggState: () => { rounds: { turns: { result: Record<string, number> }[] }[]; phase: string };
+      }
+    ).ggState(),
+  );
+  const r = saved.rounds[0]?.turns[0]?.result ?? {};
+  const mult = r['multiplier'] ?? 0;
+  expect(mult).toBeGreaterThan(0.3);
+  expect(mult).toBeLessThan(0.55);
+  expect(r['points']).toBe(Math.round((r['basePoints'] ?? 0) * mult));
 });
 
 test('Země: výběr státu kliknutím, moře nic nevybere, správný stát 5 000 bodů', async ({
@@ -420,4 +437,23 @@ test('Správa míst: úprava vrátí místo mezi návrhy, schválení chce jmén
   // Zpět do hry
   await page.getByRole('button', { name: 'Zpět do hry' }).click();
   await expect(page.getByRole('heading', { name: 'Kde na světě jsem?' })).toBeVisible();
+});
+
+test('uložená hra není čitelná a odkazy v panoramatu nevedou ven', async ({ page }) => {
+  test.skip(test.info().project.name !== 'desktop');
+  await offline(page);
+  await startGame(page, 'Česko');
+  const raw = await page.evaluate(() => localStorage.getItem('gg.game.v3') ?? '');
+  expect(raw.startsWith('gg3:')).toBe(true);
+  expect(raw).not.toContain('50.0875');
+  expect(raw).not.toContain('position');
+  // Odkaz vložený do panoramatu (jako atribuce poskytovatele) přijde o href.
+  await page.evaluate(() => {
+    const a = document.createElement('a');
+    a.href = 'https://example.invalid/?pos=50,14';
+    a.textContent = 'autor';
+    document.querySelector('.pano')?.append(a);
+  });
+  await expect(page.locator('.pano a')).not.toHaveAttribute('href', /.*/);
+  await expect(page.locator('.pano a')).toHaveText('autor');
 });

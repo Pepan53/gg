@@ -237,15 +237,27 @@ všech“; nedostupná místa oprav (nový snímek přes Najít v okolí) nebo s
 
 ## Známá omezení a podvádění
 
-Varianta A **nemá server**. Celá logika včetně cíle kola běží v prohlížeči, takže:
+Varianta A **nemá server**. Celá logika včetně cíle kola běží v prohlížeči, takže technicky
+zdatný hráč cíl zjistit může. Hra mu to ale ztěžuje:
 
-- **Cíl lze zjistit** z vývojářských nástrojů, z `localStorage` i z odkazu v atribuci
-  Mapillary. Totéž platí pro tipy ostatních hráčů a černobílý filtr jde vypnout.
-- Časový limit a Countdown hlídá prohlížeč, jde je tedy obejít. Countdown počítá čas podle
-  hodin zařízení, ne podle serveru.
-- Požadavky zadání na serverové utajení, serverové vyhodnocení a ochranu odpovědí API tato
-  varianta **vědomě nesplňuje**. Řeší je varianta B (Cloudflare Workers + D1, také zdarma)
-  se stejným herním jádrem (`src/core`).
+| Cesta k podvodu                                                                     | Stav                                                                                                                                                                                                          |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Odkaz v atribuci panoramatu (autor, logo) vede na stránku poskytovatele s polohou   | **Zavřeno:** text atribuce zůstává viditelný (licence ho vyžaduje), odkazy v panoramatu během hry nevedou nikam. V editoru míst odkazy fungují.                                                               |
+| Uložená hra v `localStorage` (cíl, tipy ostatních hráčů, čas)                       | **Ztíženo:** hra je uložená zakódovaně (`gg.game.v3`, prefix `gg3:`), souřadnice ani časy nejsou čitelné a ručně upravená nebo nezakódovaná data hra odmítne. Není to bezpečné šifrování, klíč je v kódu hry. |
+| Posun hodin v počítači zpět (víc času, plný násobitel v Countdownu)                 | **Zavřeno:** když hodiny couvnou o víc než 5 s oproti poslednímu uložení, běžící tah se uzavře, jako by čas vypršel (v Countdownu tedy 0 bodů).                                                               |
+| Posun hodin dopředu                                                                 | Jen hráči uškodí (tah dřív vyprší).                                                                                                                                                                           |
+| Vývojářské nástroje → Network (odpovědi Mapillary a Mapy.com)                       | **Nejde zavřít:** knihovny panoramat si polohu stahují samy. To platí i pro variantu se serverem.                                                                                                             |
+| Proměnné v paměti stránky (ladění JavaScriptu)                                      | **Nejde zavřít** bez serveru.                                                                                                                                                                                 |
+| Výuková místa v kódu hry a ve veřejném repozitáři (`src/data/learning-places.json`) | **Nejde zavřít:** bezplatné GitHub Pages vyžadují veřejný repozitář.                                                                                                                                          |
+| Vypnutí černobílého filtru v nástrojích                                             | **Nejde zavřít:** obraz kreslí knihovna poskytovatele.                                                                                                                                                        |
+| Hledání podle obrázku nebo porovnání s jinými mapami                                | **Nejde zavřít** v žádné variantě.                                                                                                                                                                            |
+
+Požadavky zadání na serverové utajení, serverové vyhodnocení a ochranu odpovědí API tato
+varianta **vědomě nesplňuje**. Řeší je varianta B (Cloudflare Workers + D1, také zdarma) se
+stejným herním jádrem (`src/core`).
+
+Další omezení:
+
 - Mapillary: některé oblasti mají málo 360° snímků. Kvalita snímků kolísá (jsou od uživatelů).
   Dlaždicové načítání obrazu (`imageTiling`) je vypnuté, protože ho aktuální API odmítá;
   snímky se načítají v rozlišení 2048 px.
@@ -255,6 +267,7 @@ Varianta A **nemá server**. Celá logika včetně cíle kola běží v prohlí�
 - Hranice 1:50m jsou zjednodušené; u hranic a pobřeží se může stát, že panorama těsně
   u hranice padne do sousedního státu. Hra pak počítá se státem podle Natural Earth.
 - Hranice států zvětší stažení hry v módu Země o ~230 kB (komprimovaně), načítají se jen tam.
+- Rozehraná hra z verze před zakódováním (`gg.game.v2`) se po aktualizaci nenačte.
 
 ## Struktura
 

@@ -2,8 +2,34 @@ import { SAVED_GAME_TTL_MS } from './config';
 import { validateSettings, type GameState, type Guess } from './game';
 import { isValidLatLng } from './geo';
 
-const KEY = 'gg.game.v2';
-const OLD_KEYS = ['gg.game.v1'];
+const KEY = 'gg.game.v3';
+const OLD_KEYS = ['gg.game.v1', 'gg.game.v2'];
+const PREFIX = 'gg3:';
+/**
+ * Klíč pro zakódování uložené hry. Nejde o bezpečné šifrování (klíč je
+ * v kódu hry), jen o to, aby cíl kola a tipy ostatních nebyly v nástrojích
+ * prohlížeče čitelné na první pohled a nešly snadno ručně upravit.
+ */
+const OBFUSCATION_KEY = 'GG-kde-na-svete-jsem';
+
+function xorBytes(data: Uint8Array): Uint8Array {
+  const key = new TextEncoder().encode(OBFUSCATION_KEY);
+  return data.map((b, i) => b ^ (key[i % key.length] ?? 0) ^ ((i * 31) % 251));
+}
+
+export function encodeState(state: GameState): string {
+  const bytes = xorBytes(new TextEncoder().encode(JSON.stringify(state)));
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return PREFIX + btoa(bin);
+}
+
+export function decodeState(raw: string): unknown {
+  if (!raw.startsWith(PREFIX)) return null;
+  const bin = atob(raw.slice(PREFIX.length));
+  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(xorBytes(bytes)));
+}
 
 export interface KeyValueStore {
   getItem(key: string): string | null;
@@ -22,7 +48,7 @@ function safeStore(): KeyValueStore | null {
 
 export function saveGame(state: GameState, store: KeyValueStore | null = safeStore()): void {
   try {
-    store?.setItem(KEY, JSON.stringify(state));
+    store?.setItem(KEY, encodeState(state));
   } catch {
     // Plné úložiště nebo soukromý režim: hra běží dál, jen nepřežije obnovení stránky.
   }
@@ -46,7 +72,7 @@ export function loadGame(now: number, store: KeyValueStore | null = safeStore())
   }
   if (!raw) return null;
   try {
-    const parsed: unknown = JSON.parse(raw);
+    const parsed = decodeState(raw);
     if (!isGameState(parsed)) return null;
     if (now - parsed.updatedAt > SAVED_GAME_TTL_MS) return null;
     return parsed;

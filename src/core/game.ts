@@ -286,6 +286,8 @@ function evaluate(
 
 /** Pokud čas tahu vypršel, uzavře ho: s posledním tipem, nebo s 0 body bez tipu. */
 export function expireIfNeeded(state: GameState, now: number): GameState {
+  const guarded = guardClock(state, now);
+  if (guarded !== state) return guarded;
   const turn = currentTurn(state);
   if (state.phase !== 'playing' || !turn || turn.deadline === null || now < turn.deadline) {
     return state;
@@ -296,6 +298,20 @@ export function expireIfNeeded(state: GameState, now: number): GameState {
 function isValidGuess(g: Guess): boolean {
   if (g.kind === 'point') return isValidLatLng(g.point);
   return typeof g.code === 'string' && /^[A-Z]{2}$/.test(g.code);
+}
+
+/** O kolik smí hodiny zařízení „couvnout“, než to hra považuje za podvod (ms). */
+export const CLOCK_TOLERANCE_MS = 5000;
+
+/**
+ * Hodiny zařízení se posunuly zpět (hráč si chtěl přidat čas): běžící tah
+ * s časovým limitem se ihned uzavře, jako by čas vypršel.
+ */
+export function guardClock(state: GameState, now: number): GameState {
+  const turn = currentTurn(state);
+  if (state.phase !== 'playing' || !turn || turn.deadline === null) return state;
+  if (now >= state.updatedAt - CLOCK_TOLERANCE_MS) return state;
+  return evaluate(state, turn.pending, true, turn.deadline);
 }
 
 /** Umístí nebo přesune tip. Po vypršení času už nic nezmění. */

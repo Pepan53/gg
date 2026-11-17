@@ -21,7 +21,13 @@ import {
   type Guess,
   type Target,
 } from '../src/core/game';
-import { loadGame, saveGame, type KeyValueStore } from '../src/core/storage';
+import {
+  decodeState,
+  encodeState,
+  loadGame,
+  saveGame,
+  type KeyValueStore,
+} from '../src/core/storage';
 
 const PRAGUE = { lat: 50.0755, lng: 14.4378 };
 const at = (lat: number, lng: number): Guess => ({ kind: 'point', point: { lat, lng } });
@@ -279,15 +285,15 @@ describe('uložení a obnovení stavu', () => {
 
   it('zahodí poškozená, stará nebo starší verze dat', () => {
     const store = memoryStore();
-    store.setItem('gg.game.v2', '{"version":2}');
+    store.setItem('gg.game.v3', '{"version":2}');
     expect(loadGame(0, store)).toBeNull();
-    store.setItem('gg.game.v2', 'nejde-o-json');
+    store.setItem('gg.game.v3', 'gg3:nejde-o-data');
     expect(loadGame(0, store)).toBeNull();
     saveGame(playing({}, 0), store);
     expect(loadGame(2 * 24 * 3600 * 1000, store)).toBeNull();
-    store.setItem('gg.game.v1', '{}');
+    store.setItem('gg.game.v2', '{}');
     loadGame(0, store);
-    expect(store.getItem('gg.game.v1')).toBeNull();
+    expect(store.getItem('gg.game.v2')).toBeNull();
   });
 });
 
@@ -314,5 +320,41 @@ describe('počet kol a předčasný konec', () => {
   it('odmítne nesmyslný počet kol', () => {
     expect(validateSettings(settings({ rounds: 0 }))).not.toBeNull();
     expect(validateSettings(settings({ rounds: 6 }))).not.toBeNull();
+  });
+});
+
+describe('ochrana proti podvádění (varianta A)', () => {
+  it('uložená hra je zakódovaná a jde přečíst zpět', () => {
+    const s = placeGuess(playing({ timeLimitSec: 60 }), HIT, 2000);
+    const raw = encodeState(s);
+    expect(raw.startsWith('gg3:')).toBe(true);
+    expect(raw).not.toContain('50.0755');
+    expect(raw).not.toContain('deadline');
+    expect(decodeState(raw)).toEqual(s);
+  });
+
+  it('ručně upravená nebo nezakódovaná data se nenačtou', () => {
+    const store = memoryStore();
+    saveGame(playing(), store);
+    store.setItem('gg.game.v3', JSON.stringify(playing()));
+    expect(loadGame(1000, store)).toBeNull();
+  });
+
+  it('posun hodin zpět uzavře tah, jako by čas vypršel', () => {
+    let s = placeGuess(playing({ timeLimitSec: 60 }, 100_000), HIT, 101_000);
+    s = expireIfNeeded(s, 50_000);
+    expect(s.phase).toBe('result');
+    expect(currentTurn(s)?.result?.timedOut).toBe(true);
+  });
+
+  it('malé zakolísání hodin nevadí', () => {
+    const s = placeGuess(playing({ timeLimitSec: 60 }, 100_000), HIT, 101_000);
+    expect(expireIfNeeded(s, 98_000)).toBe(s);
+  });
+
+  it('v Countdownu posun hodin zpět dá 0 bodů', () => {
+    let s = placeGuess(playing({ type: 'countdown' }, 100_000), HIT, 101_000);
+    s = submitGuess(s, 10_000);
+    expect(currentTurn(s)?.result).toMatchObject({ timedOut: true, points: 0 });
   });
 });
