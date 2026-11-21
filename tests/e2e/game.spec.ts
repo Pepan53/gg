@@ -459,7 +459,6 @@ test('uložená hra není čitelná a odkazy v panoramatu nevedou ven', async ({
 });
 
 test('Města: místo je na náměstí a po kole se ukáže jeho název', async ({ page }) => {
-  test.skip(!['desktop', 'mobil'].includes(test.info().project.name));
   await offline(page);
   await page.goto('/');
   await page.getByRole('radio', { name: REGION_RE['Česko + Slovensko'] }).check();
