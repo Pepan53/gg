@@ -148,11 +148,11 @@ Zaškrtávátko **Města** u výběru oblasti. Jde jen v oblasti **Česko** a **
 - **Česko:** náhodné město ze seznamu asi 100 českých měst (`src/data/cities.ts`). Hra přes
   Mapy.com hledá náměstí v tom městě, přednost má hlavní náměstí (Masarykovo, Mírové, Horní…).
   Vezme panorama Mapy.com do 80 m. Potřebuje klíč Mapy.com.
-- **Svět:** náhodné z 43 náměstí hlavních měst. Polohy jsou ověřené a uložené v seznamu,
-  panorama vybere Mapillary (360° snímek do 100 m).
+- **Svět:** náhodné z 28 náměstí hlavních měst. Polohy jsou ověřené a uložené v seznamu,
+  panorama vybere Mapillary (360° snímek do 150 m). V seznamu jsou jen náměstí, kde Mapillary
+  v 11/2026 takový snímek měl.
 - Po kole se ukáže název náměstí a města.
 - Když se ani po 8 pokusech nic nenajde, hra nabídne opakování.
-- U náměstí v hlavních městech nemusí mít Mapillary 360° snímek. Taková města se přeskočí.
 
 ### Víc hráčů na jednom zařízení
 

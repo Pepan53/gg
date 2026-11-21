@@ -112,18 +112,15 @@ export interface CapitalSquare {
   lng: number;
 }
 
-/** Náměstí hlavních měst s ověřenou polohou (dohledáno přes Mapy.com, 11/2026). */
+/**
+ * Náměstí hlavních měst s ověřenou polohou (dohledáno přes Mapy.com, 11/2026).
+ * Jen ta, kde měl Mapillary v 11/2026 360° snímek do 150 m. Bez něj byly třeba Bratislava,
+ * Vídeň, Berlín, Varšava, Budapešť, Lublaň, Bukurešť, Ankara, Mexiko, Lima, Montevideo,
+ * Wellington a Pretorie, a Bělehrad a Vilnius měly snímek až kolem 180 m.
+ */
 export const CAPITAL_SQUARES: readonly CapitalSquare[] = [
   { city: 'Praha', square: 'Staroměstské náměstí', lat: 50.0878, lng: 14.4205 },
-  { city: 'Bratislava', square: 'Hlavné námestie', lat: 48.1435, lng: 17.1082 },
-  { city: 'Vídeň', square: 'Stephansplatz', lat: 48.2081, lng: 16.3729 },
-  { city: 'Berlín', square: 'Pariser Platz', lat: 52.5164, lng: 13.3787 },
-  { city: 'Varšava', square: 'Rynek Starego Miasta', lat: 52.2497, lng: 21.0122 },
-  { city: 'Budapešť', square: 'Vörösmarty tér', lat: 47.4966, lng: 19.0502 },
-  { city: 'Lublaň', square: 'Prešernov trg', lat: 46.0514, lng: 14.506 },
   { city: 'Záhřeb', square: 'Trg bana Jelačića', lat: 45.8131, lng: 15.9772 },
-  { city: 'Bělehrad', square: 'Trg Republike', lat: 44.8154, lng: 20.4604 },
-  { city: 'Bukurešť', square: 'Piața Universității', lat: 44.435, lng: 26.1009 },
   { city: 'Athény', square: 'Syntagma', lat: 37.9755, lng: 23.735 },
   { city: 'Řím', square: 'Piazza Venezia', lat: 41.8962, lng: 12.4824 },
   { city: 'Madrid', square: 'Puerta del Sol', lat: 40.4169, lng: -3.7039 },
@@ -139,22 +136,15 @@ export const CAPITAL_SQUARES: readonly CapitalSquare[] = [
   { city: 'Helsinky', square: 'Senaatintori', lat: 60.17, lng: 24.952 },
   { city: 'Tallinn', square: 'Raekoja plats', lat: 59.437, lng: 24.745 },
   { city: 'Riga', square: 'Rātslaukums', lat: 56.9475, lng: 24.1067 },
-  { city: 'Vilnius', square: 'Katedros aikštė', lat: 54.686, lng: 25.287 },
   { city: 'Kyjev', square: 'Majdan Nezaležnosti', lat: 50.4499, lng: 30.5244 },
   { city: 'Reykjavík', square: 'Ingólfstorg', lat: 64.148, lng: -21.941 },
   { city: 'Moskva', square: 'Rudé náměstí', lat: 55.7536, lng: 37.6215 },
   { city: 'Tbilisi', square: 'Náměstí Svobody', lat: 41.694, lng: 44.802 },
   { city: 'Jerevan', square: 'Náměstí Republiky', lat: 40.178, lng: 44.513 },
-  { city: 'Ankara', square: 'Kızılay Meydanı', lat: 39.9208, lng: 32.8541 },
   { city: 'Washington', square: 'Freedom Plaza', lat: 38.896, lng: -77.031 },
   { city: 'Ottawa', square: 'Confederation Square', lat: 45.424, lng: -75.696 },
-  { city: 'Ciudad de México', square: 'Zócalo', lat: 19.433, lng: -99.133 },
   { city: 'Buenos Aires', square: 'Plaza de Mayo', lat: -34.6084, lng: -58.3722 },
   { city: 'Santiago de Chile', square: 'Plaza de Armas', lat: -33.4384, lng: -70.6504 },
-  { city: 'Lima', square: 'Plaza Mayor', lat: -12.0459, lng: -77.0306 },
   { city: 'Bogotá', square: 'Plaza de Bolívar', lat: 4.5982, lng: -74.076 },
-  { city: 'Montevideo', square: 'Plaza Independencia', lat: -34.9065, lng: -56.1998 },
   { city: 'Soul', square: 'Gwanghwamun', lat: 37.5689, lng: 126.977 },
-  { city: 'Wellington', square: 'Civic Square', lat: -41.2888, lng: 174.7772 },
-  { city: 'Pretorie', square: 'Church Square', lat: -25.7459, lng: 28.1879 },
 ];

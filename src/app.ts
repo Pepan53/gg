@@ -644,7 +644,7 @@ export class App {
       if (signal.aborted) throw new DOMException('Zrušeno', 'AbortError');
       const sq = await this.squares.random(scope, signal);
       if (!sq || !provider.findNear) continue;
-      const t = await provider.findNear(sq.position, scope === 'cz' ? 80 : 100, signal);
+      const t = await provider.findNear(sq.position, scope === 'cz' ? 80 : 150, signal);
       if (!t) continue;
       const target: Target = { ...t, label: sq.label };
       if (settings?.type === 'country') {
