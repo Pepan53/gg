@@ -457,3 +457,17 @@ test('uložená hra není čitelná a odkazy v panoramatu nevedou ven', async ({
   await expect(page.locator('.pano a')).not.toHaveAttribute('href', /.*/);
   await expect(page.locator('.pano a')).toHaveText('autor');
 });
+
+test('Města: místo je na náměstí a po kole se ukáže jeho název', async ({ page }) => {
+  test.skip(!['desktop', 'mobil'].includes(test.info().project.name));
+  await offline(page);
+  await page.goto('/');
+  await page.getByRole('radio', { name: REGION_RE['Česko + Slovensko'] }).check();
+  await expect(page.getByRole('checkbox', { name: /^Města/ })).toBeDisabled();
+  await page.getByRole('radio', { name: REGION_RE['Česko'] }).check();
+  await page.getByRole('checkbox', { name: /^Města/ }).check();
+  await page.getByRole('button', { name: 'Hrát' }).click();
+  await expect(page.getByTestId('fake-pano')).toBeVisible();
+  await guess(page);
+  await expect(page.locator('.place')).toContainText('Staroměstské náměstí, Praha');
+});

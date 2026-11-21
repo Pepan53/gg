@@ -17,6 +17,8 @@ export interface Target {
   view?: PanoView;
   /** ID výukového místa (režim Učení). */
   placeId?: string;
+  /** Název místa známý předem (např. náměstí u volby Města), ukáže se po kole. */
+  label?: string;
 }
 
 /** Výhled Mapillary: střed obrazu (0..1, 0..1) a přiblížení. */
@@ -78,6 +80,8 @@ export interface GameSettings {
   region: RegionId;
   type: GameType;
   grayscale: boolean;
+  /** Města: v Česku jen náměstí měst, ve světě jen náměstí hlavních měst. */
+  cities?: boolean;
   /** Časový limit tahu v sekundách, 0 = bez limitu. Countdown má pevný limit. */
   timeLimitSec: number;
   /** Jména hráčů, 1 až 6. */
@@ -117,6 +121,7 @@ export function validateSettings(s: GameSettings): string | null {
   if (!type) return 'Neznámý typ hry.';
   if (!type.regions.includes(s.region)) return 'Tenhle typ hry ve zvolené oblasti nejde.';
   if (s.grayscale && !REGIONS[s.region].grayscaleAllowed) return 'Černobílé panorama tady nejde.';
+  if (s.cities && !citiesAllowed(s.region, s.type)) return 'Volba Města tady nejde.';
   if (!Number.isInteger(s.timeLimitSec) || s.timeLimitSec < 0) return 'Neplatný časový limit.';
   if (s.players.length < 1 || s.players.length > MAX_PLAYERS) return 'Počet hráčů musí být 1 až 6.';
   if (s.players.some((p) => !p.trim())) return 'Každý hráč potřebuje jméno.';
@@ -129,6 +134,11 @@ export function validateSettings(s: GameSettings): string | null {
   const lower = s.players.map((p) => p.trim().toLowerCase());
   if (new Set(lower).size !== lower.length) return 'Jména hráčů se nesmí opakovat.';
   return null;
+}
+
+/** Volba Města jde v oblasti Česko a Svět, ne v Učení (tam jsou místa ručně vybraná). */
+export function citiesAllowed(region: RegionId, type: GameType): boolean {
+  return (region === 'cz' || region === 'world') && type !== 'learning';
 }
 
 export function createGame(settings: GameSettings, now: number, id: string): GameState {

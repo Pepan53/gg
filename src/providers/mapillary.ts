@@ -218,6 +218,14 @@ export class MapillaryProvider implements PanoramaProvider {
       .slice(0, 40);
   }
 
+  /** 360° snímek nejblíž bodu (např. náměstí) do dané vzdálenosti, nebo null. */
+  async findNear(p: LatLng, radiusM = 100, signal?: AbortSignal): Promise<Target | null> {
+    const found = await this.nearby(p, signal);
+    const best = found.find((f) => f.distanceM <= radiusM);
+    if (!best) return null;
+    return { provider: 'mapillary', panoId: best.id, position: best.position };
+  }
+
   /** Výchozí bod hledání: v oblasti náhodně uvnitř území, jinak u některého z výchozích bodů. */
   private startPoint(area: RegionArea | undefined): LatLng | null {
     if (area) {

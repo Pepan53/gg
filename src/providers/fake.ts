@@ -56,6 +56,10 @@ export class FakeProvider implements PanoramaProvider {
     return { exists: true, isPano: true, position: place?.position ?? { lat: 50, lng: 14 } };
   }
 
+  async findNear(p: { lat: number; lng: number }): Promise<Target> {
+    return { provider: this.id, panoId: `fake-near-${p.lat},${p.lng}`, position: p, heading: 0 };
+  }
+
   async panoInfo(p: { lat: number; lng: number }) {
     return { exists: true, isPano: true, position: p };
   }

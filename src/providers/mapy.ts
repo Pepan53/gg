@@ -128,6 +128,27 @@ export class MapyProvider implements PanoramaProvider {
     }
   }
 
+  /** Panorama nejblíž bodu (např. náměstí), nebo null. Vždy jen v Česku. */
+  async findNear(p: LatLng, radiusM = 80): Promise<Target | null> {
+    const apiKey = this.requireKey();
+    const Panorama = await this.load();
+    let res: { exists: boolean; info?: PanoInfo };
+    try {
+      res = await Panorama.panoramaExists({ lon: p.lng, lat: p.lat, apiKey, radius: radiusM });
+    } catch {
+      throw new ProviderError('Nepodařilo se spojit s Mapy.com.', 'network');
+    }
+    if (!res.exists || !res.info) return null;
+    const position = { lng: res.info.lon, lat: res.info.lat };
+    if (!isValidLatLng(position) || !pointInGeometry(position, CZ_GEOMETRY)) return null;
+    return {
+      provider: 'mapy',
+      panoId: mapyPanoId(position),
+      position,
+      heading: Math.floor(this.rng() * 360),
+    };
+  }
+
   async findRandom(_region: RegionDef, signal: AbortSignal): Promise<Target> {
     const apiKey = this.requireKey();
     const Panorama = await this.load();

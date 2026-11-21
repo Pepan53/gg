@@ -1,4 +1,5 @@
 import type { PanoView, Target } from '../core/game';
+import type { LatLng } from '../core/geo';
 import type { RegionDef } from '../core/modes';
 
 export class ProviderError extends Error {
@@ -29,6 +30,8 @@ export interface PanoramaProvider {
   isConfigured(): boolean;
   /** Najde náhodné panorama v oblasti. */
   findRandom(region: RegionDef, signal: AbortSignal): Promise<Target>;
+  /** Panorama nejblíž bodu do dané vzdálenosti (volba Města). */
+  findNear?(p: LatLng, radiusM?: number, signal?: AbortSignal): Promise<Target | null>;
   /** Zobrazí panorama v kontejneru. Při chybě vyhodí ProviderError. */
   createViewer(container: HTMLElement, target: Target): Promise<PanoramaViewer>;
 }

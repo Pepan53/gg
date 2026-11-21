@@ -141,6 +141,19 @@ a lišta hry ukazuje „Černobíle“ jako označení úpravy. U Mapy.com se ne
 Když se v oblasti po všech pokusech nic nenajde, hra nabídne opakování a **nikdy nepoužije
 místo mimo oblast**.
 
+### Volba Města
+
+Zaškrtávátko **Města** u výběru oblasti. Jde jen v oblasti **Česko** a **Svět** a ne v Učení.
+
+- **Česko:** náhodné město ze seznamu asi 100 českých měst (`src/data/cities.ts`). Hra přes
+  Mapy.com hledá ulice s názvem „náměstí“ v tom městě a vezme panorama Mapy.com do 80 m.
+- **Svět:** náhodné hlavní město ze seznamu 44 hlavních měst a jejich hlavního náměstí. Polohu
+  najde Mapy.com, panorama vybere Mapillary (360° snímek do 100 m).
+- Po kole se ukáže název náměstí a města.
+- Volba potřebuje klíč Mapy.com (hledání polohy). Když se ani po 8 pokusech nic nenajde, hra
+  nabídne opakování.
+- U náměstí v hlavních městech nemusí mít Mapillary 360° snímek. Taková města se přeskočí.
+
 ### Víc hráčů na jednom zařízení
 
 - 2 až 6 hráčů, bez účtů. Jména se nesmí opakovat.

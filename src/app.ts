@@ -3,6 +3,7 @@ import { loadCountries, type CountryIndex } from './core/countries';
 import {
   advance,
   beginTurn,
+  citiesAllowed,
   createGame,
   currentRound,
   currentTurn,
@@ -45,6 +46,7 @@ import { clearGame, loadGame, saveGame } from './core/storage';
 import { env } from './env';
 import { MapillaryProvider } from './providers/mapillary';
 import { MapyProvider } from './providers/mapy';
+import { MapySquareFinder, type SquareFinder } from './providers/squares';
 import { PLACE_NAME_UNAVAILABLE, fetchPlaceName } from './providers/placeName';
 import { ProviderError, type PanoramaProvider, type PanoramaViewer } from './providers/types';
 import { formatClock, formatLimit, formatPoints, h } from './ui/dom';
@@ -63,6 +65,8 @@ type Cleanup = () => void;
 const PREFS_KEY = 'gg.prefs.v2';
 /** Kolikrát zkusit jiné panorama, když v módu Země neleží v žádném státě. */
 const COUNTRY_RETRIES = 6;
+/** Kolik náměstí zkusit, než hra ohlásí chybu (volba Města). */
+const CITY_RETRIES = 8;
 
 type Prefs = GameSettings & { multi: boolean };
 
@@ -70,6 +74,7 @@ const DEFAULT_PREFS: Prefs = {
   region: 'world',
   type: 'classic',
   grayscale: false,
+  cities: false,
   timeLimitSec: 0,
   players: ['Hráč 1', 'Hráč 2'],
   multi: false,
@@ -136,10 +141,14 @@ export class App {
   }
   private readonly providers: Record<ProviderId, PanoramaProvider>;
 
+  private readonly squares: SquareFinder & { isConfigured(): boolean };
+
   constructor(
     private readonly root: HTMLElement,
     providers?: Record<ProviderId, PanoramaProvider>,
+    squares?: SquareFinder & { isConfigured(): boolean },
   ) {
+    this.squares = squares ?? new MapySquareFinder(env.mapyApiKey);
     this.providers = providers ?? {
       mapillary: new MapillaryProvider(env.mapillaryToken),
       mapy: new MapyProvider(env.mapyApiKey),
@@ -415,6 +424,15 @@ export class App {
       h('span', {}, h('strong', {}, 'Černobílé panorama'), grayNote),
     );
 
+    const citiesInput = h('input', { type: 'checkbox', name: 'cities', checked: !!prefs.cities });
+    const citiesNote = h('span', { class: 'field-note' });
+    const citiesLabel = h(
+      'label',
+      { class: 'check' },
+      citiesInput,
+      h('span', {}, h('strong', {}, 'Města'), citiesNote),
+    );
+
     const errorEl = h('p', { class: 'form-error', role: 'alert', hidden: true });
     const submit = h(
       'button',
@@ -432,7 +450,7 @@ export class App {
         h('div', { class: 'pills' }, ...whoInputs),
         playersBox,
       ),
-      h('fieldset', {}, h('legend', {}, 'Kde budeš hrát'), ...regionInputs),
+      h('fieldset', {}, h('legend', {}, 'Kde budeš hrát'), ...regionInputs, citiesLabel),
       h('fieldset', {}, h('legend', {}, 'Typ hry'), ...typeInputs),
       h('fieldset', {}, h('legend', {}, 'Čas na jeden tah'), limitPills, limitNote),
       h('fieldset', {}, h('legend', {}, 'Ztížení'), grayLabel),
@@ -481,6 +499,19 @@ export class App {
         ? 'Bez barev se místo hádá hůř. Snímek se jen zobrazí černobíle.'
         : 'U panoramat Mapy.com není úprava obrazu podle podmínek ověřená, proto ji nenabízíme.';
       prefs.grayscale = grayInput.checked;
+      const citiesOk = citiesAllowed(prefs.region, prefs.type) && this.squares.isConfigured();
+      citiesInput.disabled = !citiesOk;
+      if (!citiesOk) citiesInput.checked = false;
+      citiesNote.textContent = !this.squares.isConfigured()
+        ? 'Potřebuje klíč Mapy.com.'
+        : prefs.type === 'learning'
+          ? 'V Učení se hrají ručně vybraná místa.'
+          : prefs.region === 'czsk'
+            ? 'Jen v oblasti Česko nebo Svět.'
+            : prefs.region === 'cz'
+              ? 'Místo bude vždy na náměstí některého českého města.'
+              : 'Místo bude vždy na náměstí některého hlavního města.';
+      prefs.cities = citiesInput.checked;
     };
     form.addEventListener('change', sync);
 
@@ -492,6 +523,7 @@ export class App {
         region: prefs.region,
         type: prefs.type,
         grayscale: prefs.grayscale,
+        cities: prefs.cities || undefined,
         timeLimitSec: prefs.timeLimitSec,
         players: prefs.multi ? prefs.players.map((p) => p.trim()) : ['Ty'],
         rounds:
@@ -602,9 +634,32 @@ export class App {
     }
   }
 
+  /** Volba Města: panorama na náměstí (Česko) nebo na náměstí hlavního města (svět). */
+  private async cityTarget(signal: AbortSignal): Promise<Target> {
+    const settings = this.state?.settings;
+    const scope = settings?.region === 'cz' ? 'cz' : 'world';
+    const provider = this.provider();
+    for (let i = 0; i < CITY_RETRIES; i++) {
+      if (signal.aborted) throw new DOMException('Zrušeno', 'AbortError');
+      const sq = await this.squares.random(scope, signal);
+      if (!sq || !provider.findNear) continue;
+      const t = await provider.findNear(sq.position, scope === 'cz' ? 80 : 100, signal);
+      if (!t) continue;
+      const target: Target = { ...t, label: sq.label };
+      if (settings?.type === 'country') {
+        const f = (await loadCountries()).countryAt(target.position);
+        if (!f) continue;
+        target.country = f.properties.code;
+      }
+      return target;
+    }
+    throw new ProviderError('Nepodařilo se najít panorama na náměstí. Zkus to znovu.', 'not-found');
+  }
+
   private async findTarget(signal: AbortSignal): Promise<Target> {
     const settings = this.state?.settings;
     if (settings?.type === 'learning') return this.nextLearningTarget(signal);
+    if (settings?.cities) return this.cityTarget(signal);
     if (settings?.type !== 'country') return this.provider().findRandom(this.region(), signal);
     const countries = await loadCountries();
     for (let i = 0; i < COUNTRY_RETRIES; i++) {
@@ -1139,6 +1194,7 @@ export class App {
   private placeNameEl(round: Round): HTMLElement {
     const curated = this.placeOf(round);
     if (curated) return h('span', {}, curated.title);
+    if (round.target.label) return h('span', {}, round.target.label);
     const el = h('span', {}, 'Zjišťuju název místa...');
     const key = round.target.panoId;
     const show = (name: string | null) => (el.textContent = name ?? PLACE_NAME_UNAVAILABLE);
