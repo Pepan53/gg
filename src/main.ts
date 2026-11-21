@@ -16,7 +16,7 @@ async function boot(): Promise<void> {
       random: async (scope: 'cz' | 'world') =>
         scope === 'cz'
           ? { position: { lat: 50.0875, lng: 14.4213 }, label: 'Staroměstské náměstí, Praha' }
-          : { position: { lat: 51.508, lng: -0.1281 }, label: 'Trafalgar Square, London' },
+          : { position: { lat: 51.508, lng: -0.1281 }, label: 'Trafalgar Square, Londýn' },
     };
     new App(
       root,

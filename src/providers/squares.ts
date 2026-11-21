@@ -11,6 +11,8 @@ export interface SquareHit {
 export interface SquareFinder {
   /** Náhodné náměstí: v Česku některého města, ve světě některého hlavního města. */
   random(scope: 'cz' | 'world', signal?: AbortSignal): Promise<SquareHit | null>;
+  /** Jde hledat? Česká náměstí potřebují klíč Mapy.com, hlavní města ne. */
+  isConfigured(scope: 'cz' | 'world'): boolean;
 }
 
 interface GeoItem {
@@ -22,6 +24,9 @@ interface GeoItem {
 }
 
 const SQUARE_RE = /n[áa]m[ěe]st[íi]|námestie|\bnám\./i;
+/** Typické názvy hlavních náměstí. Když je ve městě některé z nich, má přednost. */
+const MAIN_SQUARE_RE =
+  /masarykovo|mírové|míru|svobody|republiky|horní|dolní|velké|hlavní|staroměstské|žižkovo|husovo|palackého|komenského|přemysla otakara|t\. ?g\. ?masaryka|jiřího z poděbrad|karlovo|smetanovo|riegrovo|mariánské|zámecké|krále|starého města/i;
 
 /** Z výsledků hledání vybere náměstí, které leží ve zvoleném městě v Česku. */
 export function pickCzSquare(
@@ -38,22 +43,13 @@ export function pickCzSquare(
     const sameTown = municipality ? municipality.name === town : (it.location ?? '').includes(town);
     return czech && sameTown;
   });
-  const it = randomItem(inTown, rng);
+  const main = inTown.filter((x) => MAIN_SQUARE_RE.test(x.name ?? ''));
+  const it = randomItem(main.length ? main : inTown, rng);
   if (!it?.position || !it.name) return null;
   return { position: { lat: it.position.lat, lng: it.position.lon }, label: `${it.name}, ${town}` };
 }
 
-/** Z výsledků hledání vezme první místo (náměstí hlavního města). */
-export function pickCapitalSquare(items: GeoItem[]): SquareHit | null {
-  const it = items.find((x) => x.position && x.name);
-  if (!it?.position || !it.name) return null;
-  return {
-    position: { lat: it.position.lat, lng: it.position.lon },
-    label: [it.name, it.location].filter(Boolean).join(', '),
-  };
-}
-
-/** Hledání náměstí přes Mapy.com (forward geocoding). Bez klíče nic nenajde. */
+/** Česká náměstí hledá přes Mapy.com (forward geocoding), hlavní města má v seznamu. */
 export class MapySquareFinder implements SquareFinder {
   constructor(
     private readonly apiKey: string | undefined,
@@ -61,8 +57,8 @@ export class MapySquareFinder implements SquareFinder {
     private readonly fetchFn: typeof fetch = (...args) => fetch(...args),
   ) {}
 
-  isConfigured(): boolean {
-    return !!this.apiKey;
+  isConfigured(scope: 'cz' | 'world'): boolean {
+    return scope === 'world' || !!this.apiKey;
   }
 
   private async geocode(params: [string, string][], signal?: AbortSignal): Promise<GeoItem[]> {
@@ -98,15 +94,6 @@ export class MapySquareFinder implements SquareFinder {
     }
     const sq = randomItem(CAPITAL_SQUARES, this.rng);
     if (!sq) return null;
-    const items = await this.geocode(
-      [
-        ['query', sq.square],
-        ['locality', sq.city],
-        ['type', 'regional.street'],
-        ['type', 'poi'],
-      ],
-      signal,
-    );
-    return pickCapitalSquare(items);
+    return { position: { lat: sq.lat, lng: sq.lng }, label: `${sq.square}, ${sq.city}` };
   }
 }

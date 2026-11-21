@@ -3,7 +3,7 @@ import { citiesAllowed, validateSettings } from '../src/core/game';
 import { CAPITAL_SQUARES, CZ_TOWNS } from '../src/data/cities';
 import { MapillaryProvider } from '../src/providers/mapillary';
 import { MapyProvider } from '../src/providers/mapy';
-import { MapySquareFinder, pickCapitalSquare, pickCzSquare } from '../src/providers/squares';
+import { MapySquareFinder, pickCzSquare } from '../src/providers/squares';
 
 const cz = (name: string, town: string, lat = 49.41, lon = 14.66) => ({
   name,
@@ -41,20 +41,28 @@ describe('volba Města: výběr náměstí', () => {
     expect(pickCzSquare([abroad], 'Tábor')).toBeNull();
   });
 
-  it('u hlavního města vezme první nalezené místo', () => {
-    expect(
-      pickCapitalSquare([
-        {
-          name: 'Trafalgar Square',
-          location: 'Londýn, Spojené království',
-          position: { lon: -0.128, lat: 51.508 },
-        },
-      ]),
-    ).toEqual({
-      position: { lat: 51.508, lng: -0.128 },
-      label: 'Trafalgar Square, Londýn, Spojené království',
+  it('dává přednost hlavnímu náměstí', () => {
+    const items = [
+      cz('nám. B. Martinů', 'Hodonín'),
+      cz('Masarykovo nám.', 'Hodonín', 48.85, 17.13),
+    ];
+    for (let i = 0; i < 10; i++) {
+      expect(pickCzSquare(items, 'Hodonín', Math.random)?.label).toBe('Masarykovo nám., Hodonín');
+    }
+  });
+
+  it('hlavní města mají polohu v seznamu a nepotřebují síť', async () => {
+    const fetchFn = vi.fn();
+    const f = new MapySquareFinder(undefined, () => 0, fetchFn as unknown as typeof fetch);
+    expect(await f.random('world')).toEqual({
+      position: { lat: CAPITAL_SQUARES[0]?.lat, lng: CAPITAL_SQUARES[0]?.lng },
+      label: 'Staroměstské náměstí, Praha',
     });
-    expect(pickCapitalSquare([])).toBeNull();
+    expect(fetchFn).not.toHaveBeenCalled();
+    for (const c of CAPITAL_SQUARES) {
+      expect(Math.abs(c.lat)).toBeLessThanOrEqual(90);
+      expect(Math.abs(c.lng)).toBeLessThanOrEqual(180);
+    }
   });
 
   it('hledá přes Mapy.com s městem jako lokalitou', async () => {
@@ -65,20 +73,17 @@ describe('volba Města: výběr náměstí', () => {
     });
     const f = new MapySquareFinder('klic', () => 0, fetchFn as unknown as typeof fetch);
     await f.random('cz');
-    await f.random('world');
     const a = new URL(urls[0] as string).searchParams;
     expect(a.get('query')).toBe('náměstí');
     expect(a.get('locality')).toBe(CZ_TOWNS[0]);
     expect(a.getAll('type')).toEqual(['regional.street']);
-    const b = new URL(urls[1] as string).searchParams;
-    expect(b.get('query')).toBe(CAPITAL_SQUARES[0]?.square);
-    expect(b.get('locality')).toBe(CAPITAL_SQUARES[0]?.city);
   });
 
   it('bez klíče Mapy.com nic nehledá', async () => {
     const fetchFn = vi.fn();
     const f = new MapySquareFinder(undefined, () => 0, fetchFn as unknown as typeof fetch);
-    expect(f.isConfigured()).toBe(false);
+    expect(f.isConfigured('cz')).toBe(false);
+    expect(f.isConfigured('world')).toBe(true);
     expect(await f.random('cz')).toBeNull();
     expect(fetchFn).not.toHaveBeenCalled();
   });

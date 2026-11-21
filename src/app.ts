@@ -141,12 +141,12 @@ export class App {
   }
   private readonly providers: Record<ProviderId, PanoramaProvider>;
 
-  private readonly squares: SquareFinder & { isConfigured(): boolean };
+  private readonly squares: SquareFinder;
 
   constructor(
     private readonly root: HTMLElement,
     providers?: Record<ProviderId, PanoramaProvider>,
-    squares?: SquareFinder & { isConfigured(): boolean },
+    squares?: SquareFinder,
   ) {
     this.squares = squares ?? new MapySquareFinder(env.mapyApiKey);
     this.providers = providers ?? {
@@ -499,10 +499,11 @@ export class App {
         ? 'Bez barev se místo hádá hůř. Snímek se jen zobrazí černobíle.'
         : 'U panoramat Mapy.com není úprava obrazu podle podmínek ověřená, proto ji nenabízíme.';
       prefs.grayscale = grayInput.checked;
-      const citiesOk = citiesAllowed(prefs.region, prefs.type) && this.squares.isConfigured();
+      const scope = prefs.region === 'cz' ? 'cz' : 'world';
+      const citiesOk = citiesAllowed(prefs.region, prefs.type) && this.squares.isConfigured(scope);
       citiesInput.disabled = !citiesOk;
       if (!citiesOk) citiesInput.checked = false;
-      citiesNote.textContent = !this.squares.isConfigured()
+      citiesNote.textContent = !this.squares.isConfigured(scope)
         ? 'Potřebuje klíč Mapy.com.'
         : prefs.type === 'learning'
           ? 'V Učení se hrají ručně vybraná místa.'
